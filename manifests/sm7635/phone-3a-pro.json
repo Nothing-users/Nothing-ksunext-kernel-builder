@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "device": "phone-3a-pro",
+  "name": "Nothing Phone (3a) Pro",
+  "codename": "asteroids",
+  "model": "A059P",
+  "soc": "sm7635",
+  "android": "android14-6.1",
+  "kernel": {
+    "repository": "https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635.git",
+    "branch": "sm7635/b/mr",
+    "defconfig": "gki_defconfig",
+    "image": "arch/arm64/boot/Image"
+  },
+  "toolchain": {
+    "repository": "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86",
+    "branch": "main-kernel-build-2023",
+    "version": "clang-r487747c"
+  },
+  "kernelsu": {
+    "repository": "https://github.com/pershoot/KernelSU-Next.git",
+    "branch": "dev-susfs",
+    "commit": "80436a6159f2c5589bb95f22c20c46fd947c2ce8"
+  },
+  "susfs": {
+    "repository": "https://gitlab.com/pershoot/susfs4ksu.git",
+    "branch": "gki-android14-6.1-dev",
+    "commit": "353a0ee1375068d8aa85fb72de0b5c355ec96698",
+    "patch": "kernel_patches/50_add_susfs_in_gki-android14-6.1.patch"
+  }
+}

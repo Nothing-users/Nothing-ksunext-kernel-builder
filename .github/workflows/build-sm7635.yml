@@ -1,0 +1,93 @@
+name: Build SM7635 Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Device
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - phone-3a
+          - phone-3a-pro
+          - phone-4a
+      kernel_ref:
+        description: Optional NothingOSS branch, tag or commit override
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sm7635-${{ github.ref }}-${{ inputs.device }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        env:
+          DEVICE: ${{ inputs.device }}
+        run: |
+          matrix="$(scripts/matrix.sh "$DEVICE")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache dwarves flex git jq libelf-dev libssl-dev libncurses-dev lld llvm python3 rsync zip
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: sm7635-${{ matrix.device }}-${{ github.run_id }}
+          restore-keys: |
+            sm7635-${{ matrix.device }}-
+            sm7635-
+
+      - name: Build kernel
+        env:
+          BUILD_ROOT: ${{ runner.temp }}/sm7635-${{ matrix.device }}
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+          KERNEL_REF_OVERRIDE: ${{ inputs.kernel_ref }}
+        run: scripts/build.sh "${{ matrix.manifest }}"
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.device }}-ksunext-susfs
+          path: artifacts/${{ matrix.device }}
+          if-no-files-found: error
+          compression-level: 6
+
+      - name: Show patch rejects
+        if: failure()
+        env:
+          BUILD_ROOT: ${{ runner.temp }}/sm7635-${{ matrix.device }}
+        run: |
+          find "$BUILD_ROOT" -type f -name "*.rej" -print -exec sed -n '1,240p' {} \; 2>/dev/null || true

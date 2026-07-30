@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nothing SM7635 kernel build manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "device",
+    "name",
+    "codename",
+    "model",
+    "soc",
+    "android",
+    "kernel",
+    "toolchain",
+    "kernelsu",
+    "susfs"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "device": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "codename": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "soc": {
+      "const": "sm7635"
+    },
+    "android": {
+      "const": "android14-6.1"
+    },
+    "kernel": {
+      "type": "object",
+      "required": [
+        "repository",
+        "branch",
+        "defconfig",
+        "image"
+      ]
+    },
+    "toolchain": {
+      "type": "object",
+      "required": [
+        "repository",
+        "branch",
+        "version"
+      ]
+    },
+    "kernelsu": {
+      "type": "object",
+      "required": [
+        "repository",
+        "branch",
+        "commit"
+      ]
+    },
+    "susfs": {
+      "type": "object",
+      "required": [
+        "repository",
+        "branch",
+        "commit",
+        "patch"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
