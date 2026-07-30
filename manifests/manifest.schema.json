@@ -14,6 +14,7 @@
     "toolchain",
     "kernelsu",
     "susfs",
+    "compatibility_patches",
     "anykernel3"
   ],
   "properties": {
@@ -68,6 +69,13 @@
         "repository",
         "branch",
         "patch"
+      ]
+    },
+    "compatibility_patches": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit"
       ]
     },
     "anykernel3": {

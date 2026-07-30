@@ -21,6 +21,10 @@ inputs:
     description: Compiler optimization level
     required: false
     default: O2
+  developer_mode:
+    description: Upload patch rejects and developer diagnostics
+    required: false
+    default: "false"
 
 outputs:
   artifact_name:
@@ -44,6 +48,7 @@ runs:
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
+        DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
         set -Eeuo pipefail
         manifest="$GITHUB_WORKSPACE/$MANIFEST_INPUT"
@@ -62,6 +67,8 @@ runs:
           (.toolchain.repository | test("^https://")) and
           (.kernelsu.repository | test("^https://")) and
           (.susfs.repository | test("^https://")) and
+          (.compatibility_patches.repository | test("^https://")) and
+          (.compatibility_patches.commit | test("^[0-9a-f]{40}$")) and
           (.anykernel3.repository | test("^https://")) and
           (.anykernel3.commit | test("^[0-9a-f]{40}$"))
         ' "$manifest" >/dev/null
@@ -76,10 +83,6 @@ runs:
         ksun_ref="${KSUN_REF_INPUT:-$(read_json '.kernelsu.branch')}"
         susfs_ref="${SUSFS_REF_INPUT:-$(read_json '.susfs.branch')}"
 
-        if [[ "$ksun_ref" == dev ]]; then
-          ksun_ref=dev-susfs
-        fi
-
         case "$OPTIMIZE_LEVEL_INPUT" in
           O1|O2|O3)
             ;;
@@ -89,10 +92,20 @@ runs:
             ;;
         esac
 
+        case "$DEVELOPER_MODE_INPUT" in
+          true|false)
+            ;;
+          *)
+            printf 'Unsupported developer mode value: %s\n' "$DEVELOPER_MODE_INPUT" >&2
+            exit 2
+            ;;
+        esac
+
         build_root="$RUNNER_TEMP/sm7635-$device"
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
         susfs_dir="$build_root/susfs4ksu"
+        patches_dir="$build_root/kernel-patches"
         ak3_dir="$build_root/AnyKernel3"
         out_dir="$build_root/out"
         artifact_dir="$GITHUB_WORKSPACE/artifacts/$device"
@@ -118,13 +131,17 @@ runs:
           printf 'SUSFS_REPOSITORY=%s\n' "$(read_json '.susfs.repository')"
           printf 'SUSFS_REF=%s\n' "$susfs_ref"
           printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
+          printf 'PATCHES_REPOSITORY=%s\n' "$(read_json '.compatibility_patches.repository')"
+          printf 'PATCHES_COMMIT=%s\n' "$(read_json '.compatibility_patches.commit')"
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
+          printf 'DEVELOPER_MODE=%s\n' "$DEVELOPER_MODE_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
           printf 'TOOLCHAIN_DIR=%s\n' "$toolchain_dir"
           printf 'SUSFS_DIR=%s\n' "$susfs_dir"
+          printf 'PATCHES_DIR=%s\n' "$patches_dir"
           printf 'AK3_DIR=%s\n' "$ak3_dir"
           printf 'OUT_DIR=%s\n' "$out_dir"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
@@ -147,6 +164,7 @@ runs:
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
+          echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Free disk space
@@ -224,11 +242,6 @@ runs:
           origin \
           "$KSU_REF"
         ksu_target="$(git -C "$KERNEL_DIR/KernelSU-Next" rev-parse FETCH_HEAD)"
-        git -C "$KERNEL_DIR/KernelSU-Next" -c protocol.version=2 fetch \
-          --filter=blob:none \
-          origin \
-          '+refs/heads/dev:refs/remotes/origin/dev' \
-          '+refs/heads/dev-susfs:refs/remotes/origin/dev-susfs'
         git -C "$KERNEL_DIR/KernelSU-Next" checkout --detach "$ksu_target"
 
         ln -s ../KernelSU-Next/kernel "$KERNEL_DIR/drivers/kernelsu"
@@ -263,12 +276,106 @@ runs:
         printf 'SUSFS ref: %s\n' "$SUSFS_REF"
         printf 'SUSFS commit: %s\n' "$resolved_susfs_commit"
 
-    - name: Apply SUSFS patches
+    - name: Sync compatibility patches
       shell: bash
       run: |
         set -Eeuo pipefail
+        git init "$PATCHES_DIR"
+        git -C "$PATCHES_DIR" remote add origin "$PATCHES_REPOSITORY"
+        git -C "$PATCHES_DIR" -c protocol.version=2 fetch \
+          --depth=1 \
+          --filter=blob:none \
+          origin \
+          "$PATCHES_COMMIT"
+        git -C "$PATCHES_DIR" checkout --detach FETCH_HEAD
+        resolved_patches_commit="$(git -C "$PATCHES_DIR" rev-parse HEAD)"
+
+        if [[ "$resolved_patches_commit" != "$PATCHES_COMMIT" ]]; then
+          printf 'Unexpected compatibility patches commit: %s\n' "$resolved_patches_commit" >&2
+          exit 1
+        fi
+
+    - name: Apply KernelSU Next and SUSFS patches
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        patch_logs="$BUILD_ROOT/patch-logs"
+        patch_diagnostics="$BUILD_ROOT/patch-diagnostics"
+        ksu_dir="$KERNEL_DIR/KernelSU-Next"
+        mkdir -p "$patch_logs" "$patch_diagnostics/ksun-base-rejects"
+
+        susfs_version="$(awk -F'"' '/^#define SUSFS_VERSION/{print $2; exit}' "$SUSFS_DIR/kernel_patches/include/linux/susfs.h")"
+
+        if [[ "$susfs_version" != v2.2.0 ]]; then
+          printf 'Unsupported SUSFS compatibility patch version: %s\n' "$susfs_version" >&2
+          exit 1
+        fi
+
+        ksu_patch="$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+        fix_dir="$PATCHES_DIR/next/susfs_fix_patches/$susfs_version"
+        ksu_patch_status=0
+        patch \
+          --directory="$ksu_dir" \
+          --batch \
+          --forward \
+          -p1 \
+          < "$ksu_patch" \
+          > "$patch_logs/10_enable_susfs_for_ksu.log" 2>&1 || ksu_patch_status=$?
+        cat "$patch_logs/10_enable_susfs_for_ksu.log"
+
+        mapfile -d '' ksu_rejects < <(find "$ksu_dir/kernel" -type f -name '*.rej' -print0)
+
+        if (( ksu_patch_status != 0 )) && (( ${#ksu_rejects[@]} == 0 )); then
+          printf 'KernelSU Next SUSFS patch failed without reject files\n' >&2
+          exit "$ksu_patch_status"
+        fi
+
+        for reject_file in "${ksu_rejects[@]}"; do
+          reject_relative="${reject_file#"$ksu_dir"/}"
+          reject_target="$patch_diagnostics/ksun-base-rejects/$reject_relative"
+          fix_patch="$fix_dir/fix_$(basename "$reject_file" .rej).patch"
+
+          mkdir -p "$(dirname "$reject_target")"
+          cp "$reject_file" "$reject_target"
+
+          if [[ ! -f "$fix_patch" ]]; then
+            printf 'Missing KernelSU Next compatibility patch: %s\n' "$fix_patch" >&2
+            exit 1
+          fi
+
+          {
+            printf '\nApplying %s for %s\n' "$(basename "$fix_patch")" "$reject_relative"
+            patch --directory="$ksu_dir" --batch --forward -p1 < "$fix_patch"
+          } 2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
+        done
+
+        patch \
+          --directory="$ksu_dir" \
+          --batch \
+          --forward \
+          -p1 \
+          < "$fix_dir/overwrite_hook_mode.patch" \
+          2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
+        patch \
+          --directory="$ksu_dir" \
+          --batch \
+          --forward \
+          -p1 \
+          < "$fix_dir/ksu_toolkit.patch" \
+          2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
+
+        find "$ksu_dir" -type f -name '*.rej' -delete
+
+        if ! grep -q '^config KSU_SUSFS$' "$ksu_dir/kernel/Kconfig"; then
+          printf 'KernelSU Next SUSFS integration was not applied\n' >&2
+          exit 1
+        fi
+
         sublevel="$(awk '/^SUBLEVEL =/{print $3; exit}' "$KERNEL_DIR/Makefile")"
-        printf 'KERNEL_SUBLEVEL=%s\n' "$sublevel" >> "$GITHUB_ENV"
+        {
+          printf 'KERNEL_SUBLEVEL=%s\n' "$sublevel"
+          printf 'SUSFS_VERSION=%s\n' "$susfs_version"
+        } >> "$GITHUB_ENV"
 
         if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
           sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
@@ -280,11 +387,22 @@ runs:
 
         cp -a "$SUSFS_DIR/kernel_patches/fs/." "$KERNEL_DIR/fs/"
         cp -a "$SUSFS_DIR/kernel_patches/include/linux/." "$KERNEL_DIR/include/linux/"
-        patch --directory="$KERNEL_DIR" --batch --forward -p1 < "$SUSFS_DIR/$SUSFS_PATCH"
+        kernel_patch_status=0
+        patch \
+          --directory="$KERNEL_DIR" \
+          --batch \
+          --forward \
+          -p1 \
+          < "$SUSFS_DIR/$SUSFS_PATCH" \
+          > "$patch_logs/50_add_susfs_in_gki.log" 2>&1 || kernel_patch_status=$?
+        cat "$patch_logs/50_add_susfs_in_gki.log"
 
-        if find "$KERNEL_DIR" -type f -name '*.rej' -print -quit | grep -q .; then
+        if (( kernel_patch_status != 0 )) || find "$KERNEL_DIR" -type f -name '*.rej' -print -quit | grep -q .; then
           find "$KERNEL_DIR" -type f -name '*.rej' -print >&2
-          exit 1
+          if (( kernel_patch_status == 0 )); then
+            kernel_patch_status=1
+          fi
+          exit "$kernel_patch_status"
         fi
 
     - name: Configure kernel
@@ -339,7 +457,16 @@ runs:
 
         while IFS= read -r expected; do
           [[ -z "$expected" ]] && continue
-          if ! grep -qxF "$expected" "$OUT_DIR/.config"; then
+          option="${expected%%=*}"
+          value="${expected#*=}"
+
+          if [[ "$value" == n ]]; then
+            actual="# $option is not set"
+          else
+            actual="$expected"
+          fi
+
+          if ! grep -qxF "$actual" "$OUT_DIR/.config"; then
             printf 'Required config was not enabled: %s\n' "$expected" >&2
             exit 1
           fi
@@ -525,6 +652,9 @@ runs:
           --arg susfs_repository "$SUSFS_REPOSITORY" \
           --arg susfs_ref "$SUSFS_REF" \
           --arg susfs_commit "$RESOLVED_SUSFS_COMMIT" \
+          --arg susfs_version "$SUSFS_VERSION" \
+          --arg compatibility_repository "$PATCHES_REPOSITORY" \
+          --arg compatibility_commit "$PATCHES_COMMIT" \
           --arg anykernel3_repository "$AK3_REPOSITORY" \
           --arg anykernel3_commit "$RESOLVED_AK3_COMMIT" \
           --arg anykernel3_zip "$AK3_ZIP" \
@@ -532,6 +662,7 @@ runs:
           --arg optimize_level "$OPTIMIZE_LEVEL" \
           --arg image_sha256 "$image_sha256" \
           --arg anykernel3_sha256 "$ak3_sha256" \
+          --argjson developer_mode "$DEVELOPER_MODE" \
           --argjson build_time "$BUILD_TIME" \
           '{
             device: $device,
@@ -554,7 +685,12 @@ runs:
             susfs: {
               repository: $susfs_repository,
               ref: $susfs_ref,
-              commit: $susfs_commit
+              commit: $susfs_commit,
+              version: $susfs_version
+            },
+            compatibility_patches: {
+              repository: $compatibility_repository,
+              commit: $compatibility_commit
             },
             anykernel3: {
               repository: $anykernel3_repository,
@@ -564,6 +700,7 @@ runs:
             },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
+            developer_mode: $developer_mode,
             image_sha256: $image_sha256,
             build_time_seconds: $build_time
           }' > "$ARTIFACT_DIR/build.json"
@@ -595,6 +732,74 @@ runs:
         path: artifacts
         if-no-files-found: error
         compression-level: 6
+
+    - name: Collect developer diagnostics
+      id: developer_diagnostics
+      if: ${{ always() && inputs.developer_mode == 'true' }}
+      shell: bash
+      env:
+        MANIFEST_INPUT: ${{ inputs.manifest }}
+      run: |
+        set -u
+        diagnostic_device="${DEVICE:-$(basename "$MANIFEST_INPUT" .json)}"
+        diagnostic_build_root="${BUILD_ROOT:-$RUNNER_TEMP/sm7635-diagnostics}"
+        diagnostic_dir="$GITHUB_WORKSPACE/developer-diagnostics/$diagnostic_device"
+        mkdir -p "$diagnostic_dir/rejects" "$diagnostic_dir/logs" "$diagnostic_dir/diffs"
+
+        printf 'artifact_name=%s-developer-diagnostics\n' "$diagnostic_device" >> "$GITHUB_OUTPUT"
+
+        printf '%s\n' \
+          "Device: ${DEVICE_NAME:-unknown}" \
+          "Kernel ref: ${KERNEL_REF:-unknown}" \
+          "Kernel commit: ${KERNEL_COMMIT:-unknown}" \
+          "KernelSU Next ref: ${KSU_REF:-unknown}" \
+          "KernelSU Next commit: ${RESOLVED_KSU_COMMIT:-unknown}" \
+          "SUSFS ref: ${SUSFS_REF:-unknown}" \
+          "SUSFS commit: ${RESOLVED_SUSFS_COMMIT:-unknown}" \
+          "SUSFS version: ${SUSFS_VERSION:-unknown}" \
+          "" \
+          "ksun-base-rejects contains expected rejects from the upstream integration patch." \
+          "They are resolved by the pinned compatibility patch series." \
+          "Any other .rej file indicates an unresolved patch conflict." \
+          > "$diagnostic_dir/README.txt"
+
+        if [[ -d "$diagnostic_build_root/patch-diagnostics" ]]; then
+          cp -a "$diagnostic_build_root/patch-diagnostics/." "$diagnostic_dir/rejects/"
+        fi
+
+        if [[ -d "$diagnostic_build_root/patch-logs" ]]; then
+          cp -a "$diagnostic_build_root/patch-logs/." "$diagnostic_dir/logs/"
+        fi
+
+        if [[ -f "$diagnostic_build_root/build.log" ]]; then
+          cp "$diagnostic_build_root/build.log" "$diagnostic_dir/logs/build.log"
+        fi
+
+        if [[ -d "${KERNEL_DIR:-}" ]]; then
+          while IFS= read -r -d '' reject_file; do
+            reject_relative="${reject_file#"$KERNEL_DIR"/}"
+            reject_target="$diagnostic_dir/rejects/kernel/$reject_relative"
+            mkdir -p "$(dirname "$reject_target")"
+            cp "$reject_file" "$reject_target"
+          done < <(find "$KERNEL_DIR" -type f \( -name '*.rej' -o -name '*.orig' \) -print0)
+
+          git -C "$KERNEL_DIR" status --short > "$diagnostic_dir/diffs/kernel-status.txt" 2>&1 || true
+          git -C "$KERNEL_DIR" diff --binary > "$diagnostic_dir/diffs/kernel.patch" 2>&1 || true
+        fi
+
+        if [[ -n "${KERNEL_DIR:-}" && -d "$KERNEL_DIR/KernelSU-Next" ]]; then
+          git -C "$KERNEL_DIR/KernelSU-Next" status --short > "$diagnostic_dir/diffs/ksun-status.txt" 2>&1 || true
+          git -C "$KERNEL_DIR/KernelSU-Next" diff --binary > "$diagnostic_dir/diffs/ksun.patch" 2>&1 || true
+        fi
+
+    - name: Upload developer diagnostics
+      if: ${{ always() && inputs.developer_mode == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.developer_diagnostics.outputs.artifact_name }}
+        path: developer-diagnostics
+        if-no-files-found: error
+        compression-level: 9
 
     - name: Show patch rejects
       if: failure()

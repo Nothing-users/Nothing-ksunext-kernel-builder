@@ -38,9 +38,14 @@ on:
           - O2
           - O3
       create_release:
-        description: Create GitHub Release after successful builds
+        description: Create GitHub Release or developer prerelease
         required: true
         default: true
+        type: boolean
+      developer_mode:
+        description: Include patch rejects, diffs and logs
+        required: true
+        default: false
         type: boolean
 
 permissions:
@@ -94,10 +99,11 @@ jobs:
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
+          developer_mode: ${{ inputs.developer_mode }}
 
   release:
     needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.create_release }}
+    if: ${{ !cancelled() && inputs.create_release && (needs.build.result == 'success' || inputs.developer_mode) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -139,23 +145,22 @@ jobs:
           KSUN_REF: ${{ inputs.ksun_ref }}
           SUSFS_REF: ${{ inputs.susfs_ref }}
           OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
+          DEVELOPER_MODE: ${{ inputs.developer_mode }}
+          BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -Eeuo pipefail
           tag="sm7635-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           effective_kernel_ref="${KERNEL_REF:-manifest default}"
-          effective_ksun_ref="$KSUN_REF"
           effective_susfs_ref="${SUSFS_REF:-gki-android14-6.1-dev}"
-
-          if [[ "$effective_ksun_ref" == dev ]]; then
-            effective_ksun_ref=dev-susfs
-          fi
 
           notes="$(printf '%s\n' \
             'Nothing SM7635 KernelSU Next + SUSFS build' \
             '' \
+            "Build result: $BUILD_RESULT" \
+            "Developer mode: $DEVELOPER_MODE" \
             "Device selection: $DEVICE" \
             "NothingOSS ref: $effective_kernel_ref" \
-            "KernelSU Next ref: $effective_ksun_ref" \
+            "KernelSU Next ref: $KSUN_REF" \
             "SUSFS ref: $effective_susfs_ref" \
             "Optimization: $OPTIMIZE_LEVEL" \
             '' \
@@ -163,9 +168,18 @@ jobs:
             'The packages have not yet been boot-tested on physical devices.' \
             'Raw Image files inside the full archives must not be flashed directly with fastboot.')"
 
+          release_flags=()
+          release_title="Nothing SM7635 build #$GITHUB_RUN_NUMBER"
+
+          if [[ "$DEVELOPER_MODE" == true ]]; then
+            release_flags+=(--prerelease)
+            release_title="Nothing SM7635 developer build #$GITHUB_RUN_NUMBER"
+          fi
+
           gh release create \
             "$tag" \
-            release-packages/*.tar.gz \
+            release-packages/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Nothing SM7635 build #$GITHUB_RUN_NUMBER" \
-            --notes "$notes"
+            --title "$release_title" \
+            --notes "$notes" \
+            "${release_flags[@]}"

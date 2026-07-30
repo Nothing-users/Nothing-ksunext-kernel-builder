@@ -18,13 +18,17 @@
     "version": "clang-r487747c"
   },
   "kernelsu": {
-    "repository": "https://github.com/pershoot/KernelSU-Next.git",
-    "branch": "dev-susfs"
+    "repository": "https://github.com/KernelSU-Next/KernelSU-Next.git",
+    "branch": "dev"
   },
   "susfs": {
-    "repository": "https://gitlab.com/pershoot/susfs4ksu.git",
+    "repository": "https://gitlab.com/simonpunk/susfs4ksu.git",
     "branch": "gki-android14-6.1-dev",
     "patch": "kernel_patches/50_add_susfs_in_gki-android14-6.1.patch"
+  },
+  "compatibility_patches": {
+    "repository": "https://github.com/WildKernels/kernel_patches.git",
+    "commit": "24865a0bc50dfb65b04153cc9ad2879a9c26cc7e"
   },
   "anykernel3": {
     "repository": "https://github.com/osm0sis/AnyKernel3.git",

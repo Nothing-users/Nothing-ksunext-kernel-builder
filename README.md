@@ -15,13 +15,13 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 ## Компоненты
 
 - NothingOSS kernel source
-- KernelSU Next `dev-susfs`
-- SUSFS `gki-android14-6.1-dev`
+- Official KernelSU Next `dev`
+- Official SUSFS `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - GKI `gki_defconfig`
 - AnyKernel3 flashable ZIP
 
-Значение `dev` в интерфейсе сборки означает совместимую с SUSFS ветку KernelSU Next `dev-susfs`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
+KernelSU Next загружается из `KernelSU-Next/KernelSU-Next`, SUSFS — из `simonpunk/susfs4ksu`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
 
 ## Запуск
 
@@ -37,11 +37,14 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 | `ksun_ref` | `dev` | Ветка, тег или commit KernelSU Next |
 | `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
 | `optimize_level` | `O2` | Оптимизация Clang: `O1`, `O2` или `O3` |
-| `create_release` | включено | Создать GitHub Release после успешной сборки |
+| `create_release` | включено | Создать GitHub Release или developer prerelease |
+| `developer_mode` | выключено | Сохранить `.rej`, `.orig`, patch logs и полные diff |
 
 ## Результат сборки
 
 Результат всегда сохраняется в GitHub Actions Artifacts. При включённом `create_release` создаётся GitHub Release с готовым AnyKernel3 ZIP и полным архивом файлов каждого выбранного устройства.
+
+В `developer_mode` дополнительно создаётся диагностический artifact для каждого устройства. Если сборка завершилась ошибкой, диагностические архивы публикуются как prerelease. Ожидаемые `.rej` от базового KSUN-патча сохраняются до применения compatibility-fixes; остальные `.rej` означают неразрешённый конфликт.
 
 Перед установкой разблокируйте загрузчик и сохраните оригинальный `boot.img`. AnyKernel3 ZIP пока не проверен на физическом устройстве, поэтому нужно быть готовым восстановить стоковый образ.
 
@@ -58,11 +61,12 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 ## Патчи
 
 - SUSFS: копируются `kernel_patches/fs` и `kernel_patches/include/linux`, затем применяется `kernel_patches/50_add_susfs_in_gki-android14-6.1.patch`.
-- KernelSU Next: отдельный `10_enable_susfs_for_ksu.patch` не применяется, потому что используется уже интегрированная ветка `dev-susfs`.
+- KernelSU Next: применяется официальный `kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch`.
+- KSUN compatibility: конфликты официального патча с текущим `dev` закрываются серией `v2.2.0` из закреплённого commit `WildKernels/kernel_patches`.
 - Nothing 6.1.134: добавляется отсутствующий include `linux/dma-buf.h`.
 - Nothing 6.1.157: удаляется несовместимый include `trace/hooks/blk.h`.
 
-Отдельный большой набор Nothing-специфичных патчей сейчас не нужен: этот набор уже собирался для всех трёх устройств. После обновлений NothingOSS, KernelSU Next или SUSFS совместимость нужно подтверждать новой сборкой и загрузочным тестом на устройстве.
+Официальный SUSFS-патч проверяется на обеих ветках Nothing перед сборкой. Для 3a/3a Pro требуется только include compatibility, для 4a патч применяется без конфликтов. После обновлений NothingOSS, KernelSU Next или SUSFS совместимость нужно подтверждать новой сборкой и загрузочным тестом на устройстве.
 
 ## Структура
 
