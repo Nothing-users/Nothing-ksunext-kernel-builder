@@ -5,6 +5,10 @@ inputs:
   manifest:
     description: Device manifest path
     required: true
+  package_manifests:
+    description: JSON array of manifests packaged from the same kernel build
+    required: false
+    default: ""
   kernel_ref:
     description: Optional NothingOSS branch, tag or commit override
     required: false
@@ -44,6 +48,7 @@ runs:
       shell: bash
       env:
         MANIFEST_INPUT: ${{ inputs.manifest }}
+        PACKAGE_MANIFESTS_INPUT: ${{ inputs.package_manifests }}
         KERNEL_REF_INPUT: ${{ inputs.kernel_ref }}
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
@@ -56,6 +61,17 @@ runs:
         if [[ ! -f "$manifest" ]]; then
           printf 'Manifest not found: %s\n' "$manifest" >&2
           exit 2
+        fi
+
+        if [[ -n "$PACKAGE_MANIFESTS_INPUT" ]]; then
+          package_manifests="$(jq -ce '
+            if type == "array" and length > 0 and all(.[]; type == "string")
+            then .
+            else error("package_manifests must be a non-empty string array")
+            end
+          ' <<< "$PACKAGE_MANIFESTS_INPUT")"
+        else
+          package_manifests="$(jq -cn --arg manifest "$MANIFEST_INPUT" '[$manifest]')"
         fi
 
         jq -e '
@@ -76,6 +92,66 @@ runs:
         read_json() {
           jq -er "$1" "$manifest"
         }
+
+        compile_fingerprint="$(jq -c '{
+          schema,
+          soc,
+          android,
+          codename,
+          kernel,
+          toolchain,
+          kernelsu,
+          susfs,
+          compatibility_patches,
+          anykernel3
+        }' "$manifest")"
+        package_phone_3a=false
+        package_phone_3a_pro=false
+        package_phone_4a=false
+
+        while IFS= read -r package_manifest_input; do
+          package_manifest="$GITHUB_WORKSPACE/$package_manifest_input"
+
+          if [[ ! -f "$package_manifest" ]]; then
+            printf 'Package manifest not found: %s\n' "$package_manifest" >&2
+            exit 2
+          fi
+
+          package_fingerprint="$(jq -c '{
+            schema,
+            soc,
+            android,
+            codename,
+            kernel,
+            toolchain,
+            kernelsu,
+            susfs,
+            compatibility_patches,
+            anykernel3
+          }' "$package_manifest")"
+
+          if [[ "$package_fingerprint" != "$compile_fingerprint" ]]; then
+            printf 'Package manifest requires a different kernel build: %s\n' "$package_manifest_input" >&2
+            exit 2
+          fi
+
+          package_device="$(jq -er '.device' "$package_manifest")"
+          case "$package_device" in
+            phone-3a)
+              package_phone_3a=true
+              ;;
+            phone-3a-pro)
+              package_phone_3a_pro=true
+              ;;
+            phone-4a)
+              package_phone_4a=true
+              ;;
+            *)
+              printf 'Unsupported package device: %s\n' "$package_device" >&2
+              exit 2
+              ;;
+          esac
+        done < <(jq -r '.[]' <<< "$package_manifests")
 
         device="$(read_json '.device')"
         kernel_branch="$(read_json '.kernel.branch')"
@@ -101,20 +177,26 @@ runs:
             ;;
         esac
 
-        build_root="$RUNNER_TEMP/sm7635-$device"
+        codename="$(read_json '.codename')"
+        build_root="$RUNNER_TEMP/sm7635-$codename"
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
         susfs_dir="$build_root/susfs4ksu"
         patches_dir="$build_root/kernel-patches"
         ak3_dir="$build_root/AnyKernel3"
         out_dir="$build_root/out"
-        artifact_dir="$GITHUB_WORKSPACE/artifacts/$device"
+        artifact_root="$GITHUB_WORKSPACE/artifacts"
+        artifact_dir="$artifact_root/$device"
 
         {
           printf 'MANIFEST_PATH=%s\n' "$manifest"
+          printf 'PACKAGE_MANIFESTS=%s\n' "$package_manifests"
+          printf 'PACKAGE_PHONE_3A=%s\n' "$package_phone_3a"
+          printf 'PACKAGE_PHONE_3A_PRO=%s\n' "$package_phone_3a_pro"
+          printf 'PACKAGE_PHONE_4A=%s\n' "$package_phone_4a"
           printf 'DEVICE=%s\n' "$device"
           printf 'DEVICE_NAME=%s\n' "$(read_json '.name')"
-          printf 'CODENAME=%s\n' "$(read_json '.codename')"
+          printf 'CODENAME=%s\n' "$codename"
           printf 'MODEL=%s\n' "$(read_json '.model')"
           printf 'SOC=%s\n' "$(read_json '.soc')"
           printf 'ANDROID=%s\n' "$(read_json '.android')"
@@ -144,12 +226,13 @@ runs:
           printf 'PATCHES_DIR=%s\n' "$patches_dir"
           printf 'AK3_DIR=%s\n' "$ak3_dir"
           printf 'OUT_DIR=%s\n' "$out_dir"
+          printf 'ARTIFACT_ROOT=%s\n' "$artifact_root"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
           printf 'CONFIG_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/ksunext-susfs.config"
           printf 'CCACHE_DIR=%s\n' "$RUNNER_TEMP/ccache"
         } >> "$GITHUB_ENV"
 
-        rm -rf "$build_root" "$artifact_dir"
+        rm -rf "$build_root" "$artifact_root"
         mkdir -p "$build_root" "$artifact_dir" "$RUNNER_TEMP/ccache"
 
         {
@@ -157,8 +240,8 @@ runs:
           echo ""
           echo "| Field | Value |"
           echo "|---|---|"
-          echo "| Device | $(read_json '.name') |"
-          echo "| Codename | $(read_json '.codename') |"
+          echo "| Build target | $codename |"
+          echo "| Packages | $(jq -r 'join(", ")' <<< "$package_manifests") |"
           echo "| Kernel ref | \`$kernel_ref\` |"
           echo "| KSUN ref | \`$ksun_ref\` |"
           echo "| SUSFS ref | \`$susfs_ref\` |"
@@ -183,13 +266,16 @@ runs:
         sudo apt-get update
         sudo apt-get install -y bc bison build-essential ccache dwarves file flex git jq libelf-dev libssl-dev libncurses-dev lld llvm python3 rsync zip
 
-    - name: Restore ccache
-      uses: actions/cache@v4
+    - name: Restore rolling ccache
+      id: ccache_restore
+      continue-on-error: true
+      uses: actions/cache/restore@v4
       with:
         path: ${{ runner.temp }}/ccache
-        key: sm7635-${{ github.sha }}
+        key: ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          sm7635-
+          ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-
+          ccache-sm7635-${{ env.CODENAME }}-
 
     - name: Sync NothingOSS kernel source
       shell: bash
@@ -412,11 +498,12 @@ runs:
         export ARCH=arm64
         export LLVM=1
         export LLVM_IAS=1
-        export CCACHE_COMPILERCHECK=content
+        export CCACHE_BASEDIR="$BUILD_ROOT"
+        export CCACHE_COMPILERCHECK="string:$TOOLCHAIN_VERSION"
         export CCACHE_NOHASHDIR=true
 
         mkdir -p "$OUT_DIR" "$CCACHE_DIR"
-        ccache --max-size=5G
+        ccache --max-size=3G
         ccache --zero-stats
 
         make \
@@ -484,7 +571,8 @@ runs:
         export KBUILD_BUILD_HOST=github
         export KBUILD_BUILD_TIMESTAMP
         export SOURCE_DATE_EPOCH
-        export CCACHE_COMPILERCHECK=content
+        export CCACHE_BASEDIR="$BUILD_ROOT"
+        export CCACHE_COMPILERCHECK="string:$TOOLCHAIN_VERSION"
         export CCACHE_NOHASHDIR=true
 
         KBUILD_BUILD_TIMESTAMP="$(git -C "$KERNEL_DIR" show -s --format=%cD HEAD)"
@@ -519,7 +607,7 @@ runs:
         file "$OUT_DIR/$KERNEL_IMAGE"
         ccache --show-stats
 
-    - name: Package AnyKernel3
+    - name: Sync AnyKernel3
       shell: bash
       run: |
         set -Eeuo pipefail
@@ -547,33 +635,41 @@ runs:
           "$AK3_DIR/vendor_patch" \
           "$AK3_DIR/vendor_ramdisk"
 
-        cp "$OUT_DIR/$KERNEL_IMAGE" "$AK3_DIR/Image"
-
         if ! grep -qF '@KERNEL_STRING@' "$AK3_DIR/anykernel.sh" ||
           ! grep -qF '@DEVICE_CODENAME@' "$AK3_DIR/anykernel.sh"; then
           printf 'AnyKernel3 template placeholders are missing\n' >&2
           exit 1
         fi
 
+        printf 'RESOLVED_AK3_COMMIT=%s\n' "$resolved_ak3_commit" >> "$GITHUB_ENV"
+
+    - name: Package primary AnyKernel3
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        primary_ak3_dir="$BUILD_ROOT/AnyKernel3-$DEVICE"
+        cp -a "$AK3_DIR" "$primary_ak3_dir"
+        cp "$OUT_DIR/$KERNEL_IMAGE" "$primary_ak3_dir/Image"
+
         kernel_string="Nothing $DEVICE_NAME KernelSU Next + SUSFS"
         sed -i \
           -e "s|@KERNEL_STRING@|$kernel_string|g" \
           -e "s|@DEVICE_CODENAME@|$CODENAME|g" \
-          "$AK3_DIR/anykernel.sh"
+          "$primary_ak3_dir/anykernel.sh"
 
-        if grep -qE '@[A-Z_]+@' "$AK3_DIR/anykernel.sh"; then
+        if grep -qE '@[A-Z_]+@' "$primary_ak3_dir/anykernel.sh"; then
           printf 'Unresolved AnyKernel3 template placeholder\n' >&2
           exit 1
         fi
 
-        sh -n "$AK3_DIR/anykernel.sh"
-        grep -qxF "device.name1=$CODENAME" "$AK3_DIR/anykernel.sh"
+        sh -n "$primary_ak3_dir/anykernel.sh"
+        grep -qxF "device.name1=$CODENAME" "$primary_ak3_dir/anykernel.sh"
 
         kernel_version="6.1.$KERNEL_SUBLEVEL"
         ak3_zip="Nothing-$DEVICE-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
 
         (
-          cd "$AK3_DIR"
+          cd "$primary_ak3_dir"
           zip -r9 "$ARTIFACT_DIR/$ak3_zip" . \
             -x '.gitignore' \
             -x 'README.md' \
@@ -585,10 +681,7 @@ runs:
           exit 1
         fi
 
-        {
-          printf 'AK3_ZIP=%s\n' "$ak3_zip"
-          printf 'RESOLVED_AK3_COMMIT=%s\n' "$resolved_ak3_commit"
-        } >> "$GITHUB_ENV"
+        printf 'AK3_ZIP=%s\n' "$ak3_zip" >> "$GITHUB_ENV"
 
     - name: Collect build artifacts
       id: metadata
@@ -716,11 +809,133 @@ runs:
           echo "| Optimization | \`$OPTIMIZE_LEVEL\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Upload kernel artifact
+    - name: Package additional device artifacts
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        kernel_version="6.1.$KERNEL_SUBLEVEL"
+
+        while IFS= read -r variant_manifest_input; do
+          variant_manifest="$GITHUB_WORKSPACE/$variant_manifest_input"
+          variant_device="$(jq -er '.device' "$variant_manifest")"
+
+          if [[ "$variant_device" == "$DEVICE" ]]; then
+            continue
+          fi
+
+          variant_name="$(jq -er '.name' "$variant_manifest")"
+          variant_codename="$(jq -er '.codename' "$variant_manifest")"
+          variant_model="$(jq -er '.model' "$variant_manifest")"
+          variant_artifact_dir="$ARTIFACT_ROOT/$variant_device"
+          variant_ak3_dir="$BUILD_ROOT/AnyKernel3-$variant_device"
+          variant_ak3_zip="Nothing-$variant_device-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
+          mkdir -p "$variant_artifact_dir"
+
+          cp -a "$AK3_DIR" "$variant_ak3_dir"
+          cp "$OUT_DIR/$KERNEL_IMAGE" "$variant_ak3_dir/Image"
+
+          kernel_string="Nothing $variant_name KernelSU Next + SUSFS"
+          sed -i \
+            -e "s|@KERNEL_STRING@|$kernel_string|g" \
+            -e "s|@DEVICE_CODENAME@|$variant_codename|g" \
+            "$variant_ak3_dir/anykernel.sh"
+
+          if grep -qE '@[A-Z_]+@' "$variant_ak3_dir/anykernel.sh"; then
+            printf 'Unresolved AnyKernel3 template placeholder for %s\n' "$variant_device" >&2
+            exit 1
+          fi
+
+          sh -n "$variant_ak3_dir/anykernel.sh"
+          grep -qxF "device.name1=$variant_codename" "$variant_ak3_dir/anykernel.sh"
+
+          (
+            cd "$variant_ak3_dir"
+            zip -r9 "$variant_artifact_dir/$variant_ak3_zip" . \
+              -x '.gitignore' \
+              -x 'README.md' \
+              -x '*placeholder'
+          )
+
+          cp "$ARTIFACT_DIR/Image" "$variant_artifact_dir/Image"
+          cp "$ARTIFACT_DIR/kernel.config" "$variant_artifact_dir/kernel.config"
+          cp "$ARTIFACT_DIR/build.log" "$variant_artifact_dir/build.log"
+
+          if [[ -f "$ARTIFACT_DIR/System.map" ]]; then
+            cp "$ARTIFACT_DIR/System.map" "$variant_artifact_dir/System.map"
+          fi
+
+          image_sha256="$(sha256sum "$variant_artifact_dir/Image" | awk '{print $1}')"
+          ak3_sha256="$(sha256sum "$variant_artifact_dir/$variant_ak3_zip" | awk '{print $1}')"
+
+          printf '%s\n' \
+            "Nothing SM7635 KernelSU Next + SUSFS" \
+            "" \
+            "Device: $variant_name ($variant_codename / $variant_model)" \
+            "Kernel: $kernel_version" \
+            "Optimization: $OPTIMIZE_LEVEL" \
+            "Flashable package: $variant_ak3_zip" \
+            "" \
+            "Install the ZIP with a compatible kernel flasher or custom recovery." \
+            "The bootloader must be unlocked. Back up the original boot image first." \
+            "Do not flash the raw Image file with fastboot." \
+            "This package has not yet been boot-tested on a physical device." \
+            "If the device does not boot, restore the original boot image." \
+            "" \
+            "Image SHA256: $image_sha256" \
+            "AnyKernel3 SHA256: $ak3_sha256" \
+            > "$variant_artifact_dir/README.txt"
+
+          jq \
+            --arg device "$variant_device" \
+            --arg name "$variant_name" \
+            --arg codename "$variant_codename" \
+            --arg model "$variant_model" \
+            --arg zip "$variant_ak3_zip" \
+            --arg sha256 "$ak3_sha256" \
+            '
+              .device = $device |
+              .name = $name |
+              .codename = $codename |
+              .model = $model |
+              .anykernel3.zip = $zip |
+              .anykernel3.sha256 = $sha256
+            ' "$ARTIFACT_DIR/build.json" > "$variant_artifact_dir/build.json"
+
+          {
+            echo ""
+            echo "### $variant_name package"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| AnyKernel3 | \`$variant_ak3_zip\` |"
+            echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+        done < <(jq -r '.[]' <<< "$PACKAGE_MANIFESTS")
+
+    - name: Upload Phone 3a artifact
+      if: ${{ env.PACKAGE_PHONE_3A == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.metadata.outputs.artifact_name }}
-        path: artifacts
+        name: phone-3a-ksunext-susfs
+        path: artifacts/phone-3a
+        if-no-files-found: error
+        compression-level: 6
+
+    - name: Upload Phone 3a Pro artifact
+      if: ${{ env.PACKAGE_PHONE_3A_PRO == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: phone-3a-pro-ksunext-susfs
+        path: artifacts/phone-3a-pro
+        if-no-files-found: error
+        compression-level: 6
+
+    - name: Upload Phone 4a artifact
+      if: ${{ env.PACKAGE_PHONE_4A == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: phone-4a-ksunext-susfs
+        path: artifacts/phone-4a
         if-no-files-found: error
         compression-level: 6
 
@@ -732,7 +947,7 @@ runs:
         MANIFEST_INPUT: ${{ inputs.manifest }}
       run: |
         set -u
-        diagnostic_device="${DEVICE:-$(basename "$MANIFEST_INPUT" .json)}"
+        diagnostic_device="${CODENAME:-${DEVICE:-$(basename "$MANIFEST_INPUT" .json)}}"
         diagnostic_build_root="${BUILD_ROOT:-$RUNNER_TEMP/sm7635-diagnostics}"
         diagnostic_dir="$GITHUB_WORKSPACE/developer-diagnostics/$diagnostic_device"
         mkdir -p "$diagnostic_dir/rejects" "$diagnostic_dir/logs" "$diagnostic_dir/diffs"
@@ -791,6 +1006,14 @@ runs:
         path: developer-diagnostics
         if-no-files-found: error
         compression-level: 9
+
+    - name: Save rolling ccache
+      if: ${{ always() && env.CODENAME != '' }}
+      continue-on-error: true
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Show patch rejects
       if: failure()
