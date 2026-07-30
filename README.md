@@ -50,13 +50,9 @@
 
 ## 📦 Результат
 
-- `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip` — установка через совместимый kernel flasher или custom recovery
-- `Image` — сырое ядро
-- `kernel.config`
-- `System.map`
-- `build.log`
-- `build.json`
-- `README.txt`
+- `<device>-anykernel3` — только прошиваемый `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
+- `<device>-build-files` — `Image`, config, `System.map`, логи и metadata
+- `<target>-developer-diagnostics` — `.rej`, `.orig`, patch-логи и diff при включённом developer mode
 
 AK3 проверяет codename, определяет активный A/B-слот и заменяет только kernel в `boot`, сохраняя штатный ramdisk. Для каждого устройства создаётся отдельный ZIP.
 

@@ -699,7 +699,7 @@ runs:
         image_sha256="$(sha256sum "$ARTIFACT_DIR/Image" | awk '{print $1}')"
         ak3_sha256="$(sha256sum "$ARTIFACT_DIR/$AK3_ZIP" | awk '{print $1}')"
         kernel_version="6.1.$KERNEL_SUBLEVEL"
-        artifact_name="$DEVICE-ksunext-susfs"
+        artifact_name="$DEVICE-build-files"
 
         printf '%s\n' \
           "Nothing SM7635 KernelSU Next + SUSFS" \
@@ -912,30 +912,63 @@ runs:
           } >> "$GITHUB_STEP_SUMMARY"
         done < <(jq -r '.[]' <<< "$PACKAGE_MANIFESTS")
 
-    - name: Upload Phone 3a artifact
+    - name: Upload Phone 3a AnyKernel3
       if: ${{ env.PACKAGE_PHONE_3A == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: phone-3a-ksunext-susfs
-        path: artifacts/phone-3a
+        name: phone-3a-anykernel3
+        path: artifacts/phone-3a/*.zip
+        if-no-files-found: error
+        compression-level: 0
+
+    - name: Upload Phone 3a build files
+      if: ${{ env.PACKAGE_PHONE_3A == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: phone-3a-build-files
+        path: |
+          artifacts/phone-3a
+          !artifacts/phone-3a/*.zip
         if-no-files-found: error
         compression-level: 6
 
-    - name: Upload Phone 3a Pro artifact
+    - name: Upload Phone 3a Pro AnyKernel3
       if: ${{ env.PACKAGE_PHONE_3A_PRO == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: phone-3a-pro-ksunext-susfs
-        path: artifacts/phone-3a-pro
+        name: phone-3a-pro-anykernel3
+        path: artifacts/phone-3a-pro/*.zip
+        if-no-files-found: error
+        compression-level: 0
+
+    - name: Upload Phone 3a Pro build files
+      if: ${{ env.PACKAGE_PHONE_3A_PRO == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: phone-3a-pro-build-files
+        path: |
+          artifacts/phone-3a-pro
+          !artifacts/phone-3a-pro/*.zip
         if-no-files-found: error
         compression-level: 6
 
-    - name: Upload Phone 4a artifact
+    - name: Upload Phone 4a AnyKernel3
       if: ${{ env.PACKAGE_PHONE_4A == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: phone-4a-ksunext-susfs
-        path: artifacts/phone-4a
+        name: phone-4a-anykernel3
+        path: artifacts/phone-4a/*.zip
+        if-no-files-found: error
+        compression-level: 0
+
+    - name: Upload Phone 4a build files
+      if: ${{ env.PACKAGE_PHONE_4A == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: phone-4a-build-files
+        path: |
+          artifacts/phone-4a
+          !artifacts/phone-4a/*.zip
         if-no-files-found: error
         compression-level: 6
 

@@ -125,19 +125,22 @@ jobs:
           for artifact_dir in release-assets/*; do
             [[ -d "$artifact_dir" ]] || continue
             artifact_name="$(basename "$artifact_dir")"
-            tar -C "$artifact_dir" -czf "release-packages/$artifact_name.tar.gz" .
 
-            while IFS= read -r -d '' ak3_zip; do
-              cp "$ak3_zip" release-packages/
-            done < <(find "$artifact_dir" -type f -name '*.zip' -print0)
+            if [[ "$artifact_name" == *-anykernel3 ]]; then
+              while IFS= read -r -d '' ak3_zip; do
+                cp "$ak3_zip" release-packages/
+              done < <(find "$artifact_dir" -type f -name '*.zip' -print0)
+            else
+              tar -C "$artifact_dir" -czf "release-packages/$artifact_name.tar.gz" .
+            fi
           done
 
-          if ! find release-packages -maxdepth 1 -type f -name '*.tar.gz' -print -quit | grep -q .; then
+          if ! find release-packages -maxdepth 1 -type f -print -quit | grep -q .; then
             echo "No release packages were created" >&2
             exit 1
           fi
 
-          sha256sum release-packages/*.tar.gz
+          sha256sum release-packages/*
 
       - name: Create GitHub Release
         shell: bash
