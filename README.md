@@ -19,9 +19,11 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 - Official SUSFS `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - GKI `gki_defconfig`
-- AnyKernel3 flashable ZIP
+- Custom `weekanya/AnyKernel3` flashable ZIP
 
 KernelSU Next загружается из `KernelSU-Next/KernelSU-Next`, SUSFS — из `simonpunk/susfs4ksu`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
+
+AnyKernel3 загружается из `weekanya/AnyKernel3` по закреплённому commit. Перед упаковкой builder подставляет название ядра и единственный codename выбранного устройства.
 
 ## Запуск
 
