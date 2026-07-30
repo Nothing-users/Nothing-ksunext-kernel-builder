@@ -61,7 +61,9 @@ runs:
           (.kernel.repository | test("^https://")) and
           (.toolchain.repository | test("^https://")) and
           (.kernelsu.repository | test("^https://")) and
-          (.susfs.repository | test("^https://"))
+          (.susfs.repository | test("^https://")) and
+          (.anykernel3.repository | test("^https://")) and
+          (.anykernel3.commit | test("^[0-9a-f]{40}$"))
         ' "$manifest" >/dev/null
 
         read_json() {
@@ -91,6 +93,7 @@ runs:
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
         susfs_dir="$build_root/susfs4ksu"
+        ak3_dir="$build_root/AnyKernel3"
         out_dir="$build_root/out"
         artifact_dir="$GITHUB_WORKSPACE/artifacts/$device"
 
@@ -115,11 +118,14 @@ runs:
           printf 'SUSFS_REPOSITORY=%s\n' "$(read_json '.susfs.repository')"
           printf 'SUSFS_REF=%s\n' "$susfs_ref"
           printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
+          printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
+          printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
           printf 'TOOLCHAIN_DIR=%s\n' "$toolchain_dir"
           printf 'SUSFS_DIR=%s\n' "$susfs_dir"
+          printf 'AK3_DIR=%s\n' "$ak3_dir"
           printf 'OUT_DIR=%s\n' "$out_dir"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
           printf 'CONFIG_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/ksunext-susfs.config"
@@ -386,6 +392,86 @@ runs:
         file "$OUT_DIR/$KERNEL_IMAGE"
         ccache --show-stats
 
+    - name: Package AnyKernel3
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        git init "$AK3_DIR"
+        git -C "$AK3_DIR" remote add origin "$AK3_REPOSITORY"
+        git -C "$AK3_DIR" -c protocol.version=2 fetch \
+          --depth=1 \
+          --filter=blob:none \
+          origin \
+          "$AK3_COMMIT"
+        git -C "$AK3_DIR" checkout --detach FETCH_HEAD
+        resolved_ak3_commit="$(git -C "$AK3_DIR" rev-parse HEAD)"
+
+        if [[ "$resolved_ak3_commit" != "$AK3_COMMIT" ]]; then
+          printf 'Unexpected AnyKernel3 commit: %s\n' "$resolved_ak3_commit" >&2
+          exit 1
+        fi
+
+        rm -rf \
+          "$AK3_DIR/.git" \
+          "$AK3_DIR/.github" \
+          "$AK3_DIR/modules" \
+          "$AK3_DIR/patch" \
+          "$AK3_DIR/ramdisk" \
+          "$AK3_DIR/vendor_patch" \
+          "$AK3_DIR/vendor_ramdisk"
+
+        cp "$OUT_DIR/$KERNEL_IMAGE" "$AK3_DIR/Image"
+
+        {
+          printf '%s\n' \
+            'properties() {' \
+            "'" \
+            "kernel.string=Nothing $DEVICE_NAME KernelSU Next + SUSFS" \
+            'do.devicecheck=1' \
+            'do.modules=0' \
+            'do.systemless=0' \
+            'do.cleanup=1' \
+            'do.cleanuponabort=0' \
+            "device.name1=$CODENAME" \
+            'supported.versions=' \
+            'supported.patchlevels=' \
+            'supported.vendorpatchlevels=' \
+            "'" \
+            '}' \
+            'boot_attributes() {' \
+            'set_perm_recursive 0 0 755 644 $RAMDISK/*;' \
+            'set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;' \
+            '}' \
+            'BLOCK=boot;' \
+            'IS_SLOT_DEVICE=auto;' \
+            'RAMDISK_COMPRESSION=auto;' \
+            'PATCH_VBMETA_FLAG=auto;' \
+            'NO_VBMETA_PARTITION_PATCH=1;' \
+            '. tools/ak3-core.sh;' \
+            'split_boot;' \
+            'flash_boot;'
+        } > "$AK3_DIR/anykernel.sh"
+
+        kernel_version="6.1.$KERNEL_SUBLEVEL"
+        ak3_zip="Nothing-$DEVICE-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
+
+        (
+          cd "$AK3_DIR"
+          zip -r9 "$ARTIFACT_DIR/$ak3_zip" . \
+            -x 'README.md' \
+            -x '*placeholder'
+        )
+
+        if [[ ! -s "$ARTIFACT_DIR/$ak3_zip" ]]; then
+          printf 'AnyKernel3 package was not produced\n' >&2
+          exit 1
+        fi
+
+        {
+          printf 'AK3_ZIP=%s\n' "$ak3_zip"
+          printf 'RESOLVED_AK3_COMMIT=%s\n' "$resolved_ak3_commit"
+        } >> "$GITHUB_ENV"
+
     - name: Collect build artifacts
       id: metadata
       shell: bash
@@ -400,8 +486,27 @@ runs:
         fi
 
         image_sha256="$(sha256sum "$ARTIFACT_DIR/Image" | awk '{print $1}')"
+        ak3_sha256="$(sha256sum "$ARTIFACT_DIR/$AK3_ZIP" | awk '{print $1}')"
         kernel_version="6.1.$KERNEL_SUBLEVEL"
         artifact_name="$DEVICE-ksunext-susfs"
+
+        printf '%s\n' \
+          "Nothing SM7635 KernelSU Next + SUSFS" \
+          "" \
+          "Device: $DEVICE_NAME ($CODENAME / $MODEL)" \
+          "Kernel: $kernel_version" \
+          "Optimization: $OPTIMIZE_LEVEL" \
+          "Flashable package: $AK3_ZIP" \
+          "" \
+          "Install the ZIP with a compatible kernel flasher or custom recovery." \
+          "The bootloader must be unlocked. Back up the original boot image first." \
+          "Do not flash the raw Image file with fastboot." \
+          "This package has not yet been boot-tested on a physical device." \
+          "If the device does not boot, restore the original boot image." \
+          "" \
+          "Image SHA256: $image_sha256" \
+          "AnyKernel3 SHA256: $ak3_sha256" \
+          > "$ARTIFACT_DIR/README.txt"
 
         jq -n \
           --arg device "$DEVICE" \
@@ -420,9 +525,13 @@ runs:
           --arg susfs_repository "$SUSFS_REPOSITORY" \
           --arg susfs_ref "$SUSFS_REF" \
           --arg susfs_commit "$RESOLVED_SUSFS_COMMIT" \
+          --arg anykernel3_repository "$AK3_REPOSITORY" \
+          --arg anykernel3_commit "$RESOLVED_AK3_COMMIT" \
+          --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
           --arg optimize_level "$OPTIMIZE_LEVEL" \
           --arg image_sha256 "$image_sha256" \
+          --arg anykernel3_sha256 "$ak3_sha256" \
           --argjson build_time "$BUILD_TIME" \
           '{
             device: $device,
@@ -447,6 +556,12 @@ runs:
               ref: $susfs_ref,
               commit: $susfs_commit
             },
+            anykernel3: {
+              repository: $anykernel3_repository,
+              commit: $anykernel3_commit,
+              zip: $anykernel3_zip,
+              sha256: $anykernel3_sha256
+            },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
             image_sha256: $image_sha256,
@@ -467,6 +582,8 @@ runs:
           echo "|---|---|"
           echo "| Kernel | \`$kernel_version\` |"
           echo "| Image SHA256 | \`$image_sha256\` |"
+          echo "| AnyKernel3 | \`$AK3_ZIP\` |"
+          echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
           echo "| Build time | \`${BUILD_TIME}s\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL\` |"
         } >> "$GITHUB_STEP_SUMMARY"

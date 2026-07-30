@@ -117,6 +117,10 @@ jobs:
             [[ -d "$artifact_dir" ]] || continue
             artifact_name="$(basename "$artifact_dir")"
             tar -C "$artifact_dir" -czf "release-packages/$artifact_name.tar.gz" .
+
+            while IFS= read -r -d '' ak3_zip; do
+              cp "$ak3_zip" release-packages/
+            done < <(find "$artifact_dir" -type f -name '*.zip' -print0)
           done
 
           if ! find release-packages -maxdepth 1 -type f -name '*.tar.gz' -print -quit | grep -q .; then
@@ -155,7 +159,9 @@ jobs:
             "SUSFS ref: $effective_susfs_ref" \
             "Optimization: $OPTIMIZE_LEVEL" \
             '' \
-            'Artifacts contain raw Image files, not flashable boot.img files.')"
+            'AnyKernel3 ZIP files are flashable packages.' \
+            'The packages have not yet been boot-tested on physical devices.' \
+            'Raw Image files inside the full archives must not be flashed directly with fastboot.')"
 
           gh release create \
             "$tag" \

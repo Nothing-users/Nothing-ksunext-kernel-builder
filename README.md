@@ -19,6 +19,7 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 - SUSFS `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - GKI `gki_defconfig`
+- AnyKernel3 flashable ZIP
 
 Значение `dev` в интерфейсе сборки означает совместимую с SUSFS ветку KernelSU Next `dev-susfs`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
 
@@ -38,15 +39,21 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 | `optimize_level` | `O2` | Оптимизация Clang: `O1`, `O2` или `O3` |
 | `create_release` | включено | Создать GitHub Release после успешной сборки |
 
-Результат всегда сохраняется в GitHub Actions Artifacts. При включённом `create_release` создаётся GitHub Release с архивом каждого выбранного устройства.
+## Результат сборки
 
+Результат всегда сохраняется в GitHub Actions Artifacts. При включённом `create_release` создаётся GitHub Release с готовым AnyKernel3 ZIP и полным архивом файлов каждого выбранного устройства.
+
+Перед установкой разблокируйте загрузчик и сохраните оригинальный `boot.img`. AnyKernel3 ZIP пока не проверен на физическом устройстве, поэтому нужно быть готовым восстановить стоковый образ.
+
+- `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
+- `README.txt`
 - `Image`
 - `kernel.config`
 - `System.map`
 - `build.log`
 - `build.json`
 
-`Image` не является готовым `boot.img`. Его нельзя прошивать командой `fastboot flash boot Image`. Для установки нужен репак стокового `boot.img` либо отдельный совместимый AnyKernel3-пакет.
+Устанавливать нужно ZIP через совместимый kernel flasher или custom recovery. `Image` нельзя прошивать командой `fastboot flash boot Image`.
 
 ## Патчи
 

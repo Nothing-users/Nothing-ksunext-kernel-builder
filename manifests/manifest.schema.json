@@ -13,7 +13,8 @@
     "kernel",
     "toolchain",
     "kernelsu",
-    "susfs"
+    "susfs",
+    "anykernel3"
   ],
   "properties": {
     "schema": {
@@ -67,6 +68,13 @@
         "repository",
         "branch",
         "patch"
+      ]
+    },
+    "anykernel3": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit"
       ]
     }
   },
