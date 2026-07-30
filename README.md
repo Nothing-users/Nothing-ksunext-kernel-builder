@@ -43,11 +43,10 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 
 ```text
 .github/workflows/build-sm7635.yml
+.github/actions/build-kernel/action.yml
 config/ksunext-susfs.config
 manifests/manifest.schema.json
 manifests/sm7635/phone-3a.json
 manifests/sm7635/phone-3a-pro.json
 manifests/sm7635/phone-4a.json
-scripts/build.sh
-scripts/matrix.sh
 ```
