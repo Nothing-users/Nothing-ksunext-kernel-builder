@@ -1,83 +1,65 @@
-# Nothing KernelSU Next + SUSFS Builder
+# Nothing SM7635 Kernel Builder
 
-GitHub Actions builder для GKI-ядер Nothing на платформе SM7635.
+Сборка ядер Nothing с KernelSU Next, SUSFS и готовым AnyKernel3 ZIP через GitHub Actions.
 
-## Поддерживаемые устройства
+## 📱 Устройства
 
-| Устройство | Кодовое имя | Модель | Ветка NothingOSS | Версия ядра |
-|---|---|---|---|---|
-| Nothing Phone (3a) | asteroids | A059 | `sm7635/b/mr` | 6.1.134 |
-| Nothing Phone (3a) Pro | asteroids | A059P | `sm7635/b/mr` | 6.1.134 |
-| Nothing Phone (4a) | frogger | A069 | `sm7635/b/mr_Frogger` | 6.1.157 |
+| Устройство | Codename | Модель | Ветка NothingOSS |
+|---|---|---|---|
+| Nothing Phone (3a) | `asteroids` | A059 | `sm7635/b/mr` |
+| Nothing Phone (3a) Pro | `asteroids` | A059P | `sm7635/b/mr` |
+| Nothing Phone (4a) | `frogger` | A069 | `sm7635/b/mr_Frogger` |
 
-Phone (3a) и Phone (3a) Pro используют общую ветку исходников, но имеют отдельные манифесты и артефакты.
+3a и 3a Pro используют общие исходники, но собираются в отдельные артефакты.
 
-## Компоненты
+## ⚙️ Что используется
 
-- NothingOSS kernel source
-- Official KernelSU Next `dev`
-- Official SUSFS `gki-android14-6.1-dev`
+- [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
+- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev`
+- [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
-- GKI `gki_defconfig`
-- Custom `weekanya/AnyKernel3` flashable ZIP
+- [Nothing AnyKernel3](https://github.com/weekanya/AnyKernel3)
 
-KernelSU Next загружается из `KernelSU-Next/KernelSU-Next`, SUSFS — из `simonpunk/susfs4ksu`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
+Версии AK3 и compatibility-патчей закреплены по commit SHA. Ветки NothingOSS, KSUN и SUSFS можно заменить при ручном запуске.
 
-AnyKernel3 загружается из `weekanya/AnyKernel3` по закреплённому commit. Перед упаковкой builder подставляет название ядра и единственный codename выбранного устройства.
+## 🚀 Запуск
 
-## Запуск
+Открой `Actions → Build SM7635 Kernel → Run workflow`.
 
-1. Открыть `Actions`.
-2. Выбрать `Build SM7635 Kernel`.
-3. Нажать `Run workflow`.
-4. Выбрать устройство или `all`.
-5. Настроить параметры сборки:
-
-| Параметр | Значение по умолчанию | Назначение |
+| Параметр | По умолчанию | Назначение |
 |---|---|---|
-| `kernel_ref` | ветка из манифеста | Ветка, тег или commit NothingOSS |
-| `ksun_ref` | `dev` | Ветка, тег или commit KernelSU Next |
+| `device` | `all` | Одно устройство или вся линейка |
+| `kernel_ref` | из манифеста | Ветка, тег или commit NothingOSS |
+| `ksun_ref` | `dev` | Ветка, тег или commit KSUN |
 | `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
-| `optimize_level` | `O2` | Оптимизация Clang: `O1`, `O2` или `O3` |
-| `create_release` | включено | Создать GitHub Release или developer prerelease |
-| `developer_mode` | выключено | Сохранить `.rej`, `.orig`, patch logs и полные diff |
+| `optimize_level` | `O2` | Оптимизация `O1`, `O2` или `O3` |
+| `create_release` | включено | Создать Release или developer prerelease |
+| `developer_mode` | выключено | Сохранить patch-логи, diff, `.rej` и `.orig` |
 
-## Результат сборки
+## 🧩 Патчи
 
-Результат всегда сохраняется в GitHub Actions Artifacts. При включённом `create_release` создаётся GitHub Release с готовым AnyKernel3 ZIP и полным архивом файлов каждого выбранного устройства.
+1. На официальный KSUN применяется `10_enable_susfs_for_ksu.patch`.
+2. Конфликты с текущим `dev` закрываются закреплёнными [WildKernels fixes](https://github.com/WildKernels/kernel_patches) для SUSFS v2.2.0, включая hook-mode и toolkit.
+3. Для Nothing 6.1.134 добавляется отсутствующий `linux/dma-buf.h`.
+4. Для Nothing 6.1.157 удаляется несовместимый `trace/hooks/blk.h`, если он присутствует.
+5. К ядру применяется `50_add_susfs_in_gki-android14-6.1.patch`.
 
-В `developer_mode` дополнительно создаётся диагностический artifact для каждого устройства. Если сборка завершилась ошибкой, диагностические архивы публикуются как prerelease. Ожидаемые `.rej` от базового KSUN-патча сохраняются до применения compatibility-fixes; остальные `.rej` означают неразрешённый конфликт.
+Неизвестный или неразрешённый `.rej` останавливает сборку. В `developer_mode` диагностические файлы сохраняются даже при падении job.
 
-Перед установкой разблокируйте загрузчик и сохраните оригинальный `boot.img`. AnyKernel3 ZIP пока не проверен на физическом устройстве, поэтому нужно быть готовым восстановить стоковый образ.
+## 📦 Результат
 
-- `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
-- `README.txt`
-- `Image`
+- `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip` — установка через совместимый kernel flasher или custom recovery
+- `Image` — сырое ядро
 - `kernel.config`
 - `System.map`
 - `build.log`
 - `build.json`
+- `README.txt`
 
-Устанавливать нужно ZIP через совместимый kernel flasher или custom recovery. `Image` нельзя прошивать командой `fastboot flash boot Image`.
+AK3 проверяет codename, определяет активный A/B-слот и заменяет только kernel в `boot`, сохраняя штатный ramdisk. Для каждого устройства создаётся отдельный ZIP.
 
-## Патчи
+## ⚠️ Важно
 
-- SUSFS: копируются `kernel_patches/fs` и `kernel_patches/include/linux`, затем применяется `kernel_patches/50_add_susfs_in_gki-android14-6.1.patch`.
-- KernelSU Next: применяется официальный `kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch`.
-- KSUN compatibility: конфликты официального патча с текущим `dev` закрываются серией `v2.2.0` из закреплённого commit `WildKernels/kernel_patches`.
-- Nothing 6.1.134: добавляется отсутствующий include `linux/dma-buf.h`.
-- Nothing 6.1.157: удаляется несовместимый include `trace/hooks/blk.h`.
+Загрузчик должен быть разблокирован. Перед установкой сохрани оригинальный `boot.img`.
 
-Официальный SUSFS-патч проверяется на обеих ветках Nothing перед сборкой. Для 3a/3a Pro требуется только include compatibility, для 4a патч применяется без конфликтов. После обновлений NothingOSS, KernelSU Next или SUSFS совместимость нужно подтверждать новой сборкой и загрузочным тестом на устройстве.
-
-## Структура
-
-```text
-.github/workflows/build-sm7635.yml
-.github/actions/build-kernel/action.yml
-config/ksunext-susfs.config
-manifests/manifest.schema.json
-manifests/sm7635/phone-3a.json
-manifests/sm7635/phone-3a-pro.json
-manifests/sm7635/phone-4a.json
-```
+Не прошивай сырой `Image` командой `fastboot flash boot Image`. Цепочка патчей и структура ZIP проверены, но загрузочного теста на физическом устройстве пока не было. До него релизы следует считать тестовыми.
