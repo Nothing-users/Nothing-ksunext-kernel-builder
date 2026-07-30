@@ -9,6 +9,18 @@ inputs:
     description: Optional NothingOSS branch, tag or commit override
     required: false
     default: ""
+  ksun_ref:
+    description: KernelSU Next branch or commit
+    required: false
+    default: dev
+  susfs_ref:
+    description: Optional SUSFS branch or commit override
+    required: false
+    default: ""
+  optimize_level:
+    description: Compiler optimization level
+    required: false
+    default: O2
 
 outputs:
   artifact_name:
@@ -29,6 +41,9 @@ runs:
       env:
         MANIFEST_INPUT: ${{ inputs.manifest }}
         KERNEL_REF_INPUT: ${{ inputs.kernel_ref }}
+        KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
+        SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
+        OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
       run: |
         set -Eeuo pipefail
         manifest="$GITHUB_WORKSPACE/$MANIFEST_INPUT"
@@ -45,8 +60,8 @@ runs:
           (.device | test("^[a-z0-9-]+$")) and
           (.kernel.repository | test("^https://")) and
           (.toolchain.repository | test("^https://")) and
-          (.kernelsu.commit | test("^[0-9a-f]{40}$")) and
-          (.susfs.commit | test("^[0-9a-f]{40}$"))
+          (.kernelsu.repository | test("^https://")) and
+          (.susfs.repository | test("^https://"))
         ' "$manifest" >/dev/null
 
         read_json() {
@@ -56,6 +71,22 @@ runs:
         device="$(read_json '.device')"
         kernel_branch="$(read_json '.kernel.branch')"
         kernel_ref="${KERNEL_REF_INPUT:-$kernel_branch}"
+        ksun_ref="${KSUN_REF_INPUT:-$(read_json '.kernelsu.branch')}"
+        susfs_ref="${SUSFS_REF_INPUT:-$(read_json '.susfs.branch')}"
+
+        if [[ "$ksun_ref" == dev ]]; then
+          ksun_ref=dev-susfs
+        fi
+
+        case "$OPTIMIZE_LEVEL_INPUT" in
+          O1|O2|O3)
+            ;;
+          *)
+            printf 'Unsupported optimization level: %s\n' "$OPTIMIZE_LEVEL_INPUT" >&2
+            exit 2
+            ;;
+        esac
+
         build_root="$RUNNER_TEMP/sm7635-$device"
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
@@ -80,11 +111,11 @@ runs:
           printf 'TOOLCHAIN_BRANCH=%s\n' "$(read_json '.toolchain.branch')"
           printf 'TOOLCHAIN_VERSION=%s\n' "$(read_json '.toolchain.version')"
           printf 'KSU_REPOSITORY=%s\n' "$(read_json '.kernelsu.repository')"
-          printf 'KSU_BRANCH=%s\n' "$(read_json '.kernelsu.branch')"
-          printf 'KSU_COMMIT=%s\n' "$(read_json '.kernelsu.commit')"
+          printf 'KSU_REF=%s\n' "$ksun_ref"
           printf 'SUSFS_REPOSITORY=%s\n' "$(read_json '.susfs.repository')"
-          printf 'SUSFS_COMMIT=%s\n' "$(read_json '.susfs.commit')"
+          printf 'SUSFS_REF=%s\n' "$susfs_ref"
           printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
+          printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
           printf 'TOOLCHAIN_DIR=%s\n' "$toolchain_dir"
@@ -106,7 +137,10 @@ runs:
           echo "| Device | $(read_json '.name') |"
           echo "| Codename | $(read_json '.codename') |"
           echo "| Kernel ref | \`$kernel_ref\` |"
+          echo "| KSUN ref | \`$ksun_ref\` |"
+          echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
+          echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Free disk space
@@ -177,13 +211,19 @@ runs:
       shell: bash
       run: |
         set -Eeuo pipefail
-        git clone \
+        git init "$KERNEL_DIR/KernelSU-Next"
+        git -C "$KERNEL_DIR/KernelSU-Next" remote add origin "$KSU_REPOSITORY"
+        git -C "$KERNEL_DIR/KernelSU-Next" -c protocol.version=2 fetch \
           --filter=blob:none \
-          --single-branch \
-          --branch "$KSU_BRANCH" \
-          "$KSU_REPOSITORY" \
-          "$KERNEL_DIR/KernelSU-Next"
-        git -C "$KERNEL_DIR/KernelSU-Next" checkout --detach "$KSU_COMMIT"
+          origin \
+          "$KSU_REF"
+        ksu_target="$(git -C "$KERNEL_DIR/KernelSU-Next" rev-parse FETCH_HEAD)"
+        git -C "$KERNEL_DIR/KernelSU-Next" -c protocol.version=2 fetch \
+          --filter=blob:none \
+          origin \
+          '+refs/heads/dev:refs/remotes/origin/dev' \
+          '+refs/heads/dev-susfs:refs/remotes/origin/dev-susfs'
+        git -C "$KERNEL_DIR/KernelSU-Next" checkout --detach "$ksu_target"
 
         ln -s ../KernelSU-Next/kernel "$KERNEL_DIR/drivers/kernelsu"
 
@@ -197,6 +237,7 @@ runs:
 
         resolved_ksu_commit="$(git -C "$KERNEL_DIR/KernelSU-Next" rev-parse HEAD)"
         printf 'RESOLVED_KSU_COMMIT=%s\n' "$resolved_ksu_commit" >> "$GITHUB_ENV"
+        printf 'KernelSU Next ref: %s\n' "$KSU_REF"
         printf 'KernelSU Next commit: %s\n' "$resolved_ksu_commit"
 
     - name: Sync SUSFS
@@ -209,10 +250,11 @@ runs:
           --depth=1 \
           --filter=blob:none \
           origin \
-          "$SUSFS_COMMIT"
+          "$SUSFS_REF"
         git -C "$SUSFS_DIR" checkout --detach FETCH_HEAD
         resolved_susfs_commit="$(git -C "$SUSFS_DIR" rev-parse HEAD)"
         printf 'RESOLVED_SUSFS_COMMIT=%s\n' "$resolved_susfs_commit" >> "$GITHUB_ENV"
+        printf 'SUSFS ref: %s\n' "$SUSFS_REF"
         printf 'SUSFS commit: %s\n' "$resolved_susfs_commit"
 
     - name: Apply SUSFS patches
@@ -314,7 +356,10 @@ runs:
 
         KBUILD_BUILD_TIMESTAMP="$(git -C "$KERNEL_DIR" show -s --format=%cD HEAD)"
         SOURCE_DATE_EPOCH="$(git -C "$KERNEL_DIR" show -s --format=%ct HEAD)"
+        kernel_cflags="-$OPTIMIZE_LEVEL"
         build_start="$(date +%s)"
+
+        printf 'Compiler optimization: %s\n' "$kernel_cflags"
 
         make \
           -C "$KERNEL_DIR" \
@@ -324,6 +369,7 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
+          KCFLAGS="$kernel_cflags" \
           -j"$(nproc)" \
           Image 2>&1 | tee "$BUILD_ROOT/build.log"
 
@@ -369,10 +415,13 @@ runs:
           --arg kernel_commit "$KERNEL_COMMIT" \
           --arg kernel_version "$kernel_version" \
           --arg kernelsu_repository "$KSU_REPOSITORY" \
+          --arg kernelsu_ref "$KSU_REF" \
           --arg kernelsu_commit "$RESOLVED_KSU_COMMIT" \
           --arg susfs_repository "$SUSFS_REPOSITORY" \
+          --arg susfs_ref "$SUSFS_REF" \
           --arg susfs_commit "$RESOLVED_SUSFS_COMMIT" \
           --arg toolchain "$CLANG_VERSION" \
+          --arg optimize_level "$OPTIMIZE_LEVEL" \
           --arg image_sha256 "$image_sha256" \
           --argjson build_time "$BUILD_TIME" \
           '{
@@ -390,13 +439,16 @@ runs:
             },
             kernelsu: {
               repository: $kernelsu_repository,
+              ref: $kernelsu_ref,
               commit: $kernelsu_commit
             },
             susfs: {
               repository: $susfs_repository,
+              ref: $susfs_ref,
               commit: $susfs_commit
             },
             toolchain: $toolchain,
+            optimize_level: $optimize_level,
             image_sha256: $image_sha256,
             build_time_seconds: $build_time
           }' > "$ARTIFACT_DIR/build.json"
@@ -416,6 +468,7 @@ runs:
           echo "| Kernel | \`$kernel_version\` |"
           echo "| Image SHA256 | \`$image_sha256\` |"
           echo "| Build time | \`${BUILD_TIME}s\` |"
+          echo "| Optimization | \`$OPTIMIZE_LEVEL\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload kernel artifact

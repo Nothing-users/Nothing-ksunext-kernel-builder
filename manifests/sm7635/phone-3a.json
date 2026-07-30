@@ -19,13 +19,11 @@
   },
   "kernelsu": {
     "repository": "https://github.com/pershoot/KernelSU-Next.git",
-    "branch": "dev-susfs",
-    "commit": "80436a6159f2c5589bb95f22c20c46fd947c2ce8"
+    "branch": "dev-susfs"
   },
   "susfs": {
     "repository": "https://gitlab.com/pershoot/susfs4ksu.git",
     "branch": "gki-android14-6.1-dev",
-    "commit": "353a0ee1375068d8aa85fb72de0b5c355ec96698",
     "patch": "kernel_patches/50_add_susfs_in_gki-android14-6.1.patch"
   }
 }

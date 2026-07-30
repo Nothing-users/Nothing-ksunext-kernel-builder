@@ -16,11 +16,11 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 
 - NothingOSS kernel source
 - KernelSU Next `dev-susfs`
-- SUSFS для `android14-6.1`
+- SUSFS `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - GKI `gki_defconfig`
 
-Версии KernelSU Next и SUSFS закреплены по commit SHA в каждом манифесте. Исходники NothingOSS по умолчанию берутся из актуального состояния указанной ветки.
+Значение `dev` в интерфейсе сборки означает совместимую с SUSFS ветку KernelSU Next `dev-susfs`. Можно указать другую ветку, тег или полный commit SHA. Пустой `susfs_ref` автоматически выбирает ветку SUSFS для Android 14 / kernel 6.1 из манифеста.
 
 ## Запуск
 
@@ -28,16 +28,34 @@ Phone (3a) и Phone (3a) Pro используют общую ветку исхо
 2. Выбрать `Build SM7635 Kernel`.
 3. Нажать `Run workflow`.
 4. Выбрать устройство или `all`.
-5. При необходимости указать ветку, тег или commit NothingOSS в `kernel_ref`.
+5. Настроить параметры сборки:
 
-Результат сохраняется в GitHub Actions Artifacts:
+| Параметр | Значение по умолчанию | Назначение |
+|---|---|---|
+| `kernel_ref` | ветка из манифеста | Ветка, тег или commit NothingOSS |
+| `ksun_ref` | `dev` | Ветка, тег или commit KernelSU Next |
+| `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
+| `optimize_level` | `O2` | Оптимизация Clang: `O1`, `O2` или `O3` |
+| `create_release` | включено | Создать GitHub Release после успешной сборки |
+
+Результат всегда сохраняется в GitHub Actions Artifacts. При включённом `create_release` создаётся GitHub Release с архивом каждого выбранного устройства.
 
 - `Image`
 - `kernel.config`
 - `System.map`
+- `build.log`
 - `build.json`
 
 `Image` не является готовым `boot.img`. Его нельзя прошивать командой `fastboot flash boot Image`. Для установки нужен репак стокового `boot.img` либо отдельный совместимый AnyKernel3-пакет.
+
+## Патчи
+
+- SUSFS: копируются `kernel_patches/fs` и `kernel_patches/include/linux`, затем применяется `kernel_patches/50_add_susfs_in_gki-android14-6.1.patch`.
+- KernelSU Next: отдельный `10_enable_susfs_for_ksu.patch` не применяется, потому что используется уже интегрированная ветка `dev-susfs`.
+- Nothing 6.1.134: добавляется отсутствующий include `linux/dma-buf.h`.
+- Nothing 6.1.157: удаляется несовместимый include `trace/hooks/blk.h`.
+
+Отдельный большой набор Nothing-специфичных патчей сейчас не нужен: этот набор уже собирался для всех трёх устройств. После обновлений NothingOSS, KernelSU Next или SUSFS совместимость нужно подтверждать новой сборкой и загрузочным тестом на устройстве.
 
 ## Структура
 

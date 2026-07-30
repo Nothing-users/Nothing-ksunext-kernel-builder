@@ -18,6 +18,30 @@ on:
         required: false
         default: ""
         type: string
+      ksun_ref:
+        description: KernelSU Next branch or commit
+        required: false
+        default: dev
+        type: string
+      susfs_ref:
+        description: SUSFS branch or commit, empty selects android14-6.1 automatically
+        required: false
+        default: ""
+        type: string
+      optimize_level:
+        description: Compiler optimization level
+        required: true
+        default: O2
+        type: choice
+        options:
+          - O1
+          - O2
+          - O3
+      create_release:
+        description: Create GitHub Release after successful builds
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -67,3 +91,75 @@ jobs:
         with:
           manifest: ${{ matrix.manifest }}
           kernel_ref: ${{ inputs.kernel_ref }}
+          ksun_ref: ${{ inputs.ksun_ref }}
+          susfs_ref: ${{ inputs.susfs_ref }}
+          optimize_level: ${{ inputs.optimize_level }}
+
+  release:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.create_release }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Package release assets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release-packages
+
+          for artifact_dir in release-assets/*; do
+            [[ -d "$artifact_dir" ]] || continue
+            artifact_name="$(basename "$artifact_dir")"
+            tar -C "$artifact_dir" -czf "release-packages/$artifact_name.tar.gz" .
+          done
+
+          if ! find release-packages -maxdepth 1 -type f -name '*.tar.gz' -print -quit | grep -q .; then
+            echo "No release packages were created" >&2
+            exit 1
+          fi
+
+          sha256sum release-packages/*.tar.gz
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEVICE: ${{ inputs.device }}
+          KERNEL_REF: ${{ inputs.kernel_ref }}
+          KSUN_REF: ${{ inputs.ksun_ref }}
+          SUSFS_REF: ${{ inputs.susfs_ref }}
+          OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
+        run: |
+          set -Eeuo pipefail
+          tag="sm7635-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          effective_kernel_ref="${KERNEL_REF:-manifest default}"
+          effective_ksun_ref="$KSUN_REF"
+          effective_susfs_ref="${SUSFS_REF:-gki-android14-6.1-dev}"
+
+          if [[ "$effective_ksun_ref" == dev ]]; then
+            effective_ksun_ref=dev-susfs
+          fi
+
+          notes="$(printf '%s\n' \
+            'Nothing SM7635 KernelSU Next + SUSFS build' \
+            '' \
+            "Device selection: $DEVICE" \
+            "NothingOSS ref: $effective_kernel_ref" \
+            "KernelSU Next ref: $effective_ksun_ref" \
+            "SUSFS ref: $effective_susfs_ref" \
+            "Optimization: $OPTIMIZE_LEVEL" \
+            '' \
+            'Artifacts contain raw Image files, not flashable boot.img files.')"
+
+          gh release create \
+            "$tag" \
+            release-packages/*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Nothing SM7635 build #$GITHUB_RUN_NUMBER" \
+            --notes "$notes"

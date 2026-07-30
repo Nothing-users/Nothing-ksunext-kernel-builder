@@ -58,8 +58,7 @@
       "type": "object",
       "required": [
         "repository",
-        "branch",
-        "commit"
+        "branch"
       ]
     },
     "susfs": {
@@ -67,7 +66,6 @@
       "required": [
         "repository",
         "branch",
-        "commit",
         "patch"
       ]
     }
