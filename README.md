@@ -2,7 +2,7 @@
 
 Сборка ядер Nothing с KernelSU Next, SUSFS и готовым AnyKernel3 ZIP через GitHub Actions.
 
-## 📱 Устройства
+## Устройства
 
 | Устройство | Codename | Модель | Ветка NothingOSS |
 |---|---|---|---|
@@ -12,7 +12,7 @@
 
 3a и 3a Pro описаны одним манифестом, компилируются один раз, затем упаковываются в отдельные ZIP и артефакты.
 
-## ⚙️ Что используется
+## Что используется
 
 - [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
 - [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev` или `stable`
@@ -22,7 +22,7 @@
 
 Версии AK3 и compatibility-патчей закреплены по commit SHA. Ветки NothingOSS, KSUN и SUSFS можно заменить при ручном запуске.
 
-## 🚀 Запуск
+## Запуск
 
 Открой `Actions → Build SM7635 Kernel → Run workflow`.
 
@@ -40,7 +40,7 @@
 
 Build identity неизменно задаётся composite action: `wee@mrvoki`.
 
-## 🧩 Патчи
+## Патчи
 
 1. На официальный KSUN применяется `10_enable_susfs_for_ksu.patch`.
 2. Конфликты с `dev` и `stable` закрываются отдельными закреплёнными [WildKernels fixes](https://github.com/WildKernels/kernel_patches) для SUSFS v2.2.0, включая hook-mode и toolkit.
@@ -50,7 +50,7 @@ Build identity неизменно задаётся composite action: `wee@mrvoki
 
 Неизвестный или неразрешённый `.rej` останавливает сборку. В `developer_mode` диагностические файлы сохраняются даже при падении job.
 
-## 📦 Результат
+## Результат
 
 - `<device>-anykernel3` — только прошиваемый `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
 - `<device>-build-files` — `Image`, config, `System.map`, логи и metadata
@@ -58,7 +58,7 @@ Build identity неизменно задаётся composite action: `wee@mrvoki
 
 AK3 проверяет codename, определяет активный A/B-слот и заменяет только kernel в `boot`, сохраняя штатный ramdisk. Для каждого устройства создаётся отдельный ZIP.
 
-## ⚠️ Важно
+## Важно
 
 Загрузчик должен быть разблокирован. Перед установкой сохрани оригинальный `boot.img`.
 
