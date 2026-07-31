@@ -1,4 +1,4 @@
-# Nothing SM7635 Kernel Builder
+# Nothing Kernel Builder
 
 Сборка ядер Nothing с KernelSU Next, SUSFS и готовым AnyKernel3 ZIP через GitHub Actions.
 
