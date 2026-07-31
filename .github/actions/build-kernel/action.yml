@@ -25,6 +25,18 @@ inputs:
     description: Compiler optimization level
     required: false
     default: O2
+  localversion:
+    description: Custom kernel LOCALVERSION suffix (for example, -MyKernel)
+    required: false
+    default: ""
+  build_user:
+    description: Kernel build user shown before @ in uname version
+    required: false
+    default: name
+  build_host:
+    description: Kernel build host shown after @ in uname version
+    required: false
+    default: name
   developer_mode:
     description: Upload patch rejects and developer diagnostics
     required: false
@@ -53,6 +65,9 @@ runs:
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
+        LOCALVERSION_INPUT: ${{ inputs.localversion }}
+        BUILD_USER_INPUT: ${{ inputs.build_user }}
+        BUILD_HOST_INPUT: ${{ inputs.build_host }}
         DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
         set -Eeuo pipefail
@@ -168,6 +183,21 @@ runs:
             ;;
         esac
 
+        if [[ -n "$LOCALVERSION_INPUT" && ! "$LOCALVERSION_INPUT" =~ ^-[A-Za-z0-9._+-]+$ ]]; then
+          printf 'Invalid localversion: %s (expected a suffix beginning with -)\n' "$LOCALVERSION_INPUT" >&2
+          exit 2
+        fi
+
+        if [[ ! "$BUILD_USER_INPUT" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          printf 'Invalid build user: %s\n' "$BUILD_USER_INPUT" >&2
+          exit 2
+        fi
+
+        if [[ ! "$BUILD_HOST_INPUT" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          printf 'Invalid build host: %s\n' "$BUILD_HOST_INPUT" >&2
+          exit 2
+        fi
+
         case "$DEVELOPER_MODE_INPUT" in
           true|false)
             ;;
@@ -218,6 +248,9 @@ runs:
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
+          printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
+          printf 'KBUILD_BUILD_USER=%s\n' "$BUILD_USER_INPUT"
+          printf 'KBUILD_BUILD_HOST=%s\n' "$BUILD_HOST_INPUT"
           printf 'DEVELOPER_MODE=%s\n' "$DEVELOPER_MODE_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
@@ -247,6 +280,8 @@ runs:
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
+          echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
+          echo "| Build identity | \`$BUILD_USER_INPUT@$BUILD_HOST_INPUT\` |"
           echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
@@ -514,6 +549,7 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
+          LOCALVERSION="$LOCALVERSION" \
           "$KERNEL_DEFCONFIG"
 
         while IFS='=' read -r option value; do
@@ -540,6 +576,7 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
+          LOCALVERSION="$LOCALVERSION" \
           olddefconfig
 
         while IFS= read -r expected; do
@@ -567,8 +604,8 @@ runs:
         export ARCH=arm64
         export LLVM=1
         export LLVM_IAS=1
-        export KBUILD_BUILD_USER=github-actions
-        export KBUILD_BUILD_HOST=github
+        export KBUILD_BUILD_USER
+        export KBUILD_BUILD_HOST
         export KBUILD_BUILD_TIMESTAMP
         export SOURCE_DATE_EPOCH
         export CCACHE_BASEDIR="$BUILD_ROOT"
@@ -590,6 +627,7 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
+          LOCALVERSION="$LOCALVERSION" \
           KCFLAGS="$kernel_cflags" \
           -j"$(nproc)" \
           Image 2>&1 | tee "$BUILD_ROOT/build.log"
@@ -603,7 +641,12 @@ runs:
           exit 1
         fi
 
+        kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" LOCALVERSION="$LOCALVERSION" kernelrelease)"
+        printf 'KERNEL_RELEASE=%s\n' "$kernel_release" >> "$GITHUB_ENV"
+
         printf 'Build time: %sm %ss\n' "$((build_time / 60))" "$((build_time % 60))"
+        printf 'Kernel release: %s\n' "$kernel_release"
+        printf 'Build identity: %s@%s\n' "$KBUILD_BUILD_USER" "$KBUILD_BUILD_HOST"
         file "$OUT_DIR/$KERNEL_IMAGE"
         ccache --show-stats
 
@@ -665,7 +708,7 @@ runs:
         sh -n "$primary_ak3_dir/anykernel.sh"
         grep -qxF "device.name1=$CODENAME" "$primary_ak3_dir/anykernel.sh"
 
-        kernel_version="6.1.$KERNEL_SUBLEVEL"
+        kernel_version="$KERNEL_RELEASE"
         ak3_zip="Nothing-$DEVICE-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
 
         (
@@ -698,7 +741,7 @@ runs:
 
         image_sha256="$(sha256sum "$ARTIFACT_DIR/Image" | awk '{print $1}')"
         ak3_sha256="$(sha256sum "$ARTIFACT_DIR/$AK3_ZIP" | awk '{print $1}')"
-        kernel_version="6.1.$KERNEL_SUBLEVEL"
+        kernel_version="$KERNEL_RELEASE"
         artifact_name="$DEVICE-build-files"
 
         printf '%s\n' \
@@ -744,6 +787,9 @@ runs:
           --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
           --arg optimize_level "$OPTIMIZE_LEVEL" \
+          --arg localversion "$LOCALVERSION" \
+          --arg build_user "$KBUILD_BUILD_USER" \
+          --arg build_host "$KBUILD_BUILD_HOST" \
           --arg image_sha256 "$image_sha256" \
           --arg anykernel3_sha256 "$ak3_sha256" \
           --argjson developer_mode "$DEVELOPER_MODE" \
@@ -784,6 +830,11 @@ runs:
             },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
+            localversion: $localversion,
+            build_identity: {
+              user: $build_user,
+              host: $build_host
+            },
             developer_mode: $developer_mode,
             image_sha256: $image_sha256,
             build_time_seconds: $build_time
@@ -807,13 +858,15 @@ runs:
           echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
           echo "| Build time | \`${BUILD_TIME}s\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL\` |"
+          echo "| Local version | \`${LOCALVERSION:-<none>}\` |"
+          echo "| Build identity | \`$KBUILD_BUILD_USER@$KBUILD_BUILD_HOST\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Package additional device artifacts
       shell: bash
       run: |
         set -Eeuo pipefail
-        kernel_version="6.1.$KERNEL_SUBLEVEL"
+        kernel_version="$KERNEL_RELEASE"
 
         while IFS= read -r variant_manifest_input; do
           variant_manifest="$GITHUB_WORKSPACE/$variant_manifest_input"
