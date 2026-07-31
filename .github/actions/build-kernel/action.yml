@@ -10,7 +10,7 @@ inputs:
     required: false
     default: ""
   ksun_ref:
-    description: KernelSU Next branch
+    description: KernelSU Next branch, tag or commit
     required: false
     default: dev
   susfs_ref:
@@ -123,15 +123,6 @@ runs:
         susfs_ref="${SUSFS_REF_INPUT:-$(read_json '.susfs.branch')}"
         build_user=wee
         build_host=mrvoki
-
-        case "$ksun_ref" in
-          dev|stable)
-            ;;
-          *)
-            printf 'Unsupported KernelSU Next branch: %s\n' "$ksun_ref" >&2
-            exit 2
-            ;;
-        esac
 
         case "$OPTIMIZE_LEVEL_INPUT" in
           O1|O2|O3)

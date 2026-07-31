@@ -15,7 +15,7 @@
 ## Что используется
 
 - [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
-- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev` или `stable`
+- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev`, `stable` или пользовательский ref
 - [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - [Nothing AnyKernel3](https://github.com/weekanya/AnyKernel3)
@@ -32,7 +32,8 @@
 |---|---|---|
 | `device` | `all` | Линейка 3a, Phone 4a или все устройства |
 | `kernel_ref` | из манифеста | Ветка, тег или commit NothingOSS |
-| `ksun_ref` | `dev` | Ветка KSUN: `dev` или `stable` |
+| `ksun_ref` | `dev` | `dev`, `stable` или `custom` |
+| `ksun_custom_ref` | пусто | Branch, tag или commit KSUN для режима `custom` |
 | `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
 | `optimize_level` | `O2` | Оптимизация `O1`, `O2` или `O3` |
 | `create_release` | включено | Создать Release или developer prerelease |
