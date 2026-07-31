@@ -37,14 +37,6 @@ on:
           - O1
           - O2
           - O3
-      tcp_congestion_control:
-        description: Default TCP congestion control algorithm
-        required: true
-        default: bbr3
-        type: choice
-        options:
-          - bbr3
-          - bbr
       build_user:
         description: Build user shown before @
         required: false
@@ -120,7 +112,6 @@ jobs:
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
-          tcp_congestion_control: ${{ inputs.tcp_congestion_control }}
           build_user: ${{ inputs.build_user }}
           build_host: ${{ inputs.build_host }}
           developer_mode: ${{ inputs.developer_mode }}
@@ -172,7 +163,6 @@ jobs:
           KSUN_REF: ${{ inputs.ksun_ref }}
           SUSFS_REF: ${{ inputs.susfs_ref }}
           OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
-          TCP_CONGESTION_CONTROL: ${{ inputs.tcp_congestion_control }}
           DEVELOPER_MODE: ${{ inputs.developer_mode }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
@@ -191,7 +181,7 @@ jobs:
             "KernelSU Next ref: $KSUN_REF" \
             "SUSFS ref: $effective_susfs_ref" \
             "Optimization: $OPTIMIZE_LEVEL" \
-            "TCP congestion control: $TCP_CONGESTION_CONTROL" \
+            "TCP congestion control: bbr3" \
             '' \
             'AnyKernel3 ZIP files are flashable packages.' \
             'The packages have not yet been boot-tested on physical devices.' \
