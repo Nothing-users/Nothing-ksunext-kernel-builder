@@ -26,9 +26,9 @@ inputs:
     required: false
     default: O2
   localversion:
-    description: Custom kernel LOCALVERSION suffix (for example, -MyKernel)
+    description: Exact custom kernel LOCALVERSION suffix
     required: false
-    default: ""
+    default: "-NothingUsers"
   build_user:
     description: Kernel build user shown before @ in uname version
     required: false
@@ -568,6 +568,30 @@ runs:
           esac
         done < "$CONFIG_FRAGMENT"
 
+        # Keep uname -r clean and deterministic. LOCALVERSION is supplied on
+        # the make command line; the config must not add another suffix.
+        "$KERNEL_DIR/scripts/config" \
+          --file "$OUT_DIR/.config" \
+          --set-str LOCALVERSION ""
+        "$KERNEL_DIR/scripts/config" \
+          --file "$OUT_DIR/.config" \
+          --disable LOCALVERSION_AUTO
+
+        # NothingOSS setlocalversion still appends -g<commit>-dirty even with
+        # CONFIG_LOCALVERSION_AUTO disabled. Replace it with a no-op because
+        # this action always passes the requested LOCALVERSION explicitly.
+        setlocalversion="$KERNEL_DIR/scripts/setlocalversion"
+        if [[ ! -f "$setlocalversion" ]]; then
+          printf 'Missing setlocalversion script: %s\n' "$setlocalversion" >&2
+          exit 1
+        fi
+        cp -f "$setlocalversion" "$setlocalversion.original"
+        printf '%s\n' \
+          '#!/bin/sh' \
+          '# SCM suffix intentionally disabled by NothingUsers kernel builder.' \
+          'exit 0' > "$setlocalversion"
+        chmod +x "$setlocalversion"
+
         make \
           -C "$KERNEL_DIR" \
           O="$OUT_DIR" \
@@ -642,10 +666,33 @@ runs:
         fi
 
         kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" LOCALVERSION="$LOCALVERSION" kernelrelease)"
+        base_version="$(make -s -C "$KERNEL_DIR" kernelversion)"
+        expected_release="${base_version}${LOCALVERSION}"
+
+        if [[ "$kernel_release" != "$expected_release" ]]; then
+          printf 'Unexpected kernel release. Expected %s, got %s\n' \
+            "$expected_release" "$kernel_release" >&2
+          exit 1
+        fi
+
+        version_line="$(strings "$OUT_DIR/$KERNEL_IMAGE" | grep -m1 '^Linux version ' || true)"
+        if [[ -z "$version_line" ]]; then
+          printf 'Linux version string was not found in %s\n' "$OUT_DIR/$KERNEL_IMAGE" >&2
+          exit 1
+        fi
+        embedded_release="${version_line#Linux version }"
+        embedded_release="${embedded_release%% *}"
+        if [[ "$embedded_release" != "$expected_release" ]]; then
+          printf 'Unexpected embedded release. Expected %s, got %s\n' \
+            "$expected_release" "$embedded_release" >&2
+          exit 1
+        fi
+
         printf 'KERNEL_RELEASE=%s\n' "$kernel_release" >> "$GITHUB_ENV"
 
         printf 'Build time: %sm %ss\n' "$((build_time / 60))" "$((build_time % 60))"
         printf 'Kernel release: %s\n' "$kernel_release"
+        printf 'Embedded version: %s\n' "$version_line"
         printf 'Build identity: %s@%s\n' "$KBUILD_BUILD_USER" "$KBUILD_BUILD_HOST"
         file "$OUT_DIR/$KERNEL_IMAGE"
         ccache --show-stats
