@@ -25,6 +25,10 @@ inputs:
     description: Compiler optimization level
     required: false
     default: O2
+  tcp_congestion_control:
+    description: Default TCP congestion control algorithm
+    required: false
+    default: bbr3
   localversion:
     description: Exact custom kernel LOCALVERSION suffix
     required: false
@@ -65,6 +69,7 @@ runs:
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
+        TCP_CONGESTION_CONTROL_INPUT: ${{ inputs.tcp_congestion_control }}
         LOCALVERSION_INPUT: ${{ inputs.localversion }}
         BUILD_USER_INPUT: ${{ inputs.build_user }}
         BUILD_HOST_INPUT: ${{ inputs.build_host }}
@@ -183,6 +188,15 @@ runs:
             ;;
         esac
 
+        case "$TCP_CONGESTION_CONTROL_INPUT" in
+          bbr|bbr3)
+            ;;
+          *)
+            printf 'Unsupported TCP congestion control algorithm: %s\n' "$TCP_CONGESTION_CONTROL_INPUT" >&2
+            exit 2
+            ;;
+        esac
+
         if [[ -n "$LOCALVERSION_INPUT" && ! "$LOCALVERSION_INPUT" =~ ^-[A-Za-z0-9._+-]+$ ]]; then
           printf 'Invalid localversion: %s (expected a suffix beginning with -)\n' "$LOCALVERSION_INPUT" >&2
           exit 2
@@ -248,6 +262,7 @@ runs:
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
+          printf 'TCP_CONGESTION_CONTROL=%s\n' "$TCP_CONGESTION_CONTROL_INPUT"
           printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
           printf 'KBUILD_BUILD_USER=%s\n' "$BUILD_USER_INPUT"
           printf 'KBUILD_BUILD_HOST=%s\n' "$BUILD_HOST_INPUT"
@@ -280,6 +295,7 @@ runs:
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
+          echo "| TCP congestion control | \`$TCP_CONGESTION_CONTROL_INPUT\` |"
           echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
           echo "| Build identity | \`$BUILD_USER_INPUT@$BUILD_HOST_INPUT\` |"
           echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
@@ -526,6 +542,46 @@ runs:
           exit "$kernel_patch_status"
         fi
 
+        bbrv3_dir="$PATCHES_DIR/common/bbrv3"
+        bbrv3_sysctl_add="$bbrv3_dir/sysctl_add_proc_dou8vec_minmax.patch"
+        bbrv3_sysctl_fix="$bbrv3_dir/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
+        bbrv3_main="$bbrv3_dir/0001-net-tcp-backport-BBRv3-to-android14-6.1.patch"
+
+        for bbrv3_patch in "$bbrv3_sysctl_add" "$bbrv3_sysctl_fix" "$bbrv3_main"; do
+          if [[ ! -f "$bbrv3_patch" ]]; then
+            printf 'Missing BBRv3 patch: %s\n' "$bbrv3_patch" >&2
+            exit 1
+          fi
+        done
+
+        if ! grep -q '^int proc_dou8vec_minmax(' "$KERNEL_DIR/kernel/sysctl.c"; then
+          patch \
+            --directory="$KERNEL_DIR" \
+            --batch \
+            --forward \
+            -p1 \
+            < "$bbrv3_sysctl_add" \
+            2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_add").log"
+        fi
+
+        if ! grep -qF 'val = READ_ONCE(*data);' "$KERNEL_DIR/kernel/sysctl.c"; then
+          patch \
+            --directory="$KERNEL_DIR" \
+            --batch \
+            --forward \
+            -p1 \
+            < "$bbrv3_sysctl_fix" \
+            2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_fix").log"
+        fi
+
+        patch \
+          --directory="$KERNEL_DIR" \
+          --batch \
+          --forward \
+          -p1 \
+          < "$bbrv3_main" \
+          2>&1 | tee "$patch_logs/$(basename "$bbrv3_main").log"
+
     - name: Configure kernel
       shell: bash
       run: |
@@ -566,6 +622,19 @@ runs:
               ;;
           esac
         done < "$CONFIG_FRAGMENT"
+
+        case "$TCP_CONGESTION_CONTROL" in
+          bbr)
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -e DEFAULT_BBR
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -d DEFAULT_BBR3
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" --set-str DEFAULT_TCP_CONG bbr
+            ;;
+          bbr3)
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -d DEFAULT_BBR
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -e DEFAULT_BBR3
+            "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" --set-str DEFAULT_TCP_CONG bbr3
+            ;;
+        esac
 
         # Store the requested suffix in the kernel config so setlocalversion
         # keeps it while the SCM/git suffix is disabled below.
@@ -618,6 +687,11 @@ runs:
             exit 1
           fi
         done < "$CONFIG_FRAGMENT"
+
+        if ! grep -qxF "CONFIG_DEFAULT_TCP_CONG=\"$TCP_CONGESTION_CONTROL\"" "$OUT_DIR/.config"; then
+          printf 'Requested TCP congestion control was not selected: %s\n' "$TCP_CONGESTION_CONTROL" >&2
+          exit 1
+        fi
 
     - name: Build kernel Image
       id: build
@@ -802,6 +876,7 @@ runs:
           "Device: $DEVICE_NAME ($CODENAME / $MODEL)" \
           "Kernel: $kernel_version" \
           "Optimization: $OPTIMIZE_LEVEL" \
+          "TCP congestion control: $TCP_CONGESTION_CONTROL" \
           "Flashable package: $AK3_ZIP" \
           "" \
           "Install the ZIP with a compatible kernel flasher or custom recovery." \
@@ -839,6 +914,7 @@ runs:
           --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
           --arg optimize_level "$OPTIMIZE_LEVEL" \
+          --arg tcp_congestion_control "$TCP_CONGESTION_CONTROL" \
           --arg localversion "$LOCALVERSION" \
           --arg build_user "$KBUILD_BUILD_USER" \
           --arg build_host "$KBUILD_BUILD_HOST" \
@@ -882,6 +958,7 @@ runs:
             },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
+            tcp_congestion_control: $tcp_congestion_control,
             localversion: $localversion,
             build_identity: {
               user: $build_user,
@@ -978,6 +1055,7 @@ runs:
             "Device: $variant_name ($variant_codename / $variant_model)" \
             "Kernel: $kernel_version" \
             "Optimization: $OPTIMIZE_LEVEL" \
+            "TCP congestion control: $TCP_CONGESTION_CONTROL" \
             "Flashable package: $variant_ak3_zip" \
             "" \
             "Install the ZIP with a compatible kernel flasher or custom recovery." \
