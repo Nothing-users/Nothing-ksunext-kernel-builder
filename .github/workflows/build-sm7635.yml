@@ -40,17 +40,17 @@ on:
       localversion:
         description: Kernel LOCALVERSION suffix, must start with -
         required: false
-        default: "-MyKernel"
+        default: "-NothingUsers"
         type: string
       build_user:
         description: Build user shown before @
         required: false
-        default: "name"
+        default: "wee"
         type: string
       build_host:
         description: Build host shown after @
         required: false
-        default: "name"
+        default: "vokintos"
         type: string
       create_release:
         description: Create GitHub Release or developer prerelease
