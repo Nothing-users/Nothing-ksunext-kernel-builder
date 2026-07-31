@@ -37,6 +37,21 @@ on:
           - O1
           - O2
           - O3
+      localversion:
+        description: Kernel LOCALVERSION suffix, must start with -
+        required: false
+        default: "-MyKernel"
+        type: string
+      build_user:
+        description: Build user shown before @
+        required: false
+        default: "name"
+        type: string
+      build_host:
+        description: Build host shown after @
+        required: false
+        default: "name"
+        type: string
       create_release:
         description: Create GitHub Release or developer prerelease
         required: true
@@ -102,6 +117,9 @@ jobs:
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
+          localversion: ${{ inputs.localversion }}
+          build_user: ${{ inputs.build_user }}
+          build_host: ${{ inputs.build_host }}
           developer_mode: ${{ inputs.developer_mode }}
 
   release:
