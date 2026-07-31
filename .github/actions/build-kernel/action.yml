@@ -585,20 +585,7 @@ runs:
           exit 1
         fi
         cp -f "$setlocalversion" "$setlocalversion.original"
-        python3 - "$setlocalversion" <<'PYSETLOCALVERSION'
-from pathlib import Path
-import re
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text()
-pattern = re.compile(r'(?m)^(scm_version\(\)\s*\{\s*\n)')
-replacement = r'\1\t# Disabled by NothingUsers kernel builder: do not append git/dirty suffix.\n\treturn 0\n'
-updated, count = pattern.subn(replacement, text, count=1)
-if count != 1:
-    raise SystemExit("Could not patch scm_version() in scripts/setlocalversion")
-path.write_text(updated)
-PYSETLOCALVERSION
+        python3 -c 'from pathlib import Path; import re, sys; p = Path(sys.argv[1]); t = p.read_text(); u, n = re.subn(r"(?m)^(scm_version\(\)\s*\{\s*\n)", r"\1\t# Disabled by NothingUsers kernel builder: do not append git/dirty suffix.\n\treturn 0\n", t, count=1); assert n == 1, "Could not patch scm_version() in scripts/setlocalversion"; p.write_text(u)' "$setlocalversion"
         chmod +x "$setlocalversion"
 
         make \
