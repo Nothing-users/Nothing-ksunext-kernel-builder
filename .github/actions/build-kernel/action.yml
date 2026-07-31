@@ -5,16 +5,12 @@ inputs:
   manifest:
     description: Device manifest path
     required: true
-  package_manifests:
-    description: JSON array of manifests packaged from the same kernel build
-    required: false
-    default: ""
   kernel_ref:
     description: Optional NothingOSS branch, tag or commit override
     required: false
     default: ""
   ksun_ref:
-    description: KernelSU Next branch or commit
+    description: KernelSU Next branch
     required: false
     default: dev
   susfs_ref:
@@ -29,14 +25,6 @@ inputs:
     description: Exact custom kernel LOCALVERSION suffix
     required: false
     default: "-nothing-users"
-  build_user:
-    description: Kernel build user shown before @ in uname version
-    required: false
-    default: name
-  build_host:
-    description: Kernel build host shown after @ in uname version
-    required: false
-    default: name
   developer_mode:
     description: Upload patch rejects and developer diagnostics
     required: false
@@ -60,14 +48,11 @@ runs:
       shell: bash
       env:
         MANIFEST_INPUT: ${{ inputs.manifest }}
-        PACKAGE_MANIFESTS_INPUT: ${{ inputs.package_manifests }}
         KERNEL_REF_INPUT: ${{ inputs.kernel_ref }}
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
         LOCALVERSION_INPUT: ${{ inputs.localversion }}
-        BUILD_USER_INPUT: ${{ inputs.build_user }}
-        BUILD_HOST_INPUT: ${{ inputs.build_host }}
         DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
         set -Eeuo pipefail
@@ -78,22 +63,20 @@ runs:
           exit 2
         fi
 
-        if [[ -n "$PACKAGE_MANIFESTS_INPUT" ]]; then
-          package_manifests="$(jq -ce '
-            if type == "array" and length > 0 and all(.[]; type == "string")
-            then .
-            else error("package_manifests must be a non-empty string array")
-            end
-          ' <<< "$PACKAGE_MANIFESTS_INPUT")"
-        else
-          package_manifests="$(jq -cn --arg manifest "$MANIFEST_INPUT" '[$manifest]')"
-        fi
-
         jq -e '
           .schema == 1 and
           .soc == "sm7635" and
           .android == "android14-6.1" and
-          (.device | test("^[a-z0-9-]+$")) and
+          (.devices |
+            type == "array" and
+            length > 0 and
+            all(.[];
+              (.device | type == "string" and test("^[a-z0-9-]+$")) and
+              (.name | type == "string" and length > 0) and
+              (.model | type == "string" and length > 0)
+            ) and
+            ((map(.device) | unique | length) == length)
+          ) and
           (.kernel.repository | test("^https://")) and
           (.toolchain.repository | test("^https://")) and
           (.kernelsu.repository | test("^https://")) and
@@ -108,49 +91,12 @@ runs:
           jq -er "$1" "$manifest"
         }
 
-        compile_fingerprint="$(jq -c '{
-          schema,
-          soc,
-          android,
-          codename,
-          kernel,
-          toolchain,
-          kernelsu,
-          susfs,
-          compatibility_patches,
-          anykernel3
-        }' "$manifest")"
+        package_devices="$(jq -c '.devices' "$manifest")"
         package_phone_3a=false
         package_phone_3a_pro=false
         package_phone_4a=false
 
-        while IFS= read -r package_manifest_input; do
-          package_manifest="$GITHUB_WORKSPACE/$package_manifest_input"
-
-          if [[ ! -f "$package_manifest" ]]; then
-            printf 'Package manifest not found: %s\n' "$package_manifest" >&2
-            exit 2
-          fi
-
-          package_fingerprint="$(jq -c '{
-            schema,
-            soc,
-            android,
-            codename,
-            kernel,
-            toolchain,
-            kernelsu,
-            susfs,
-            compatibility_patches,
-            anykernel3
-          }' "$package_manifest")"
-
-          if [[ "$package_fingerprint" != "$compile_fingerprint" ]]; then
-            printf 'Package manifest requires a different kernel build: %s\n' "$package_manifest_input" >&2
-            exit 2
-          fi
-
-          package_device="$(jq -er '.device' "$package_manifest")"
+        while IFS= read -r package_device; do
           case "$package_device" in
             phone-3a)
               package_phone_3a=true
@@ -166,13 +112,26 @@ runs:
               exit 2
               ;;
           esac
-        done < <(jq -r '.[]' <<< "$package_manifests")
+        done < <(jq -r '.[].device' <<< "$package_devices")
 
-        device="$(read_json '.device')"
+        device="$(read_json '.devices[0].device')"
+        device_name="$(read_json '.devices[0].name')"
+        model="$(read_json '.devices[0].model')"
         kernel_branch="$(read_json '.kernel.branch')"
         kernel_ref="${KERNEL_REF_INPUT:-$kernel_branch}"
         ksun_ref="${KSUN_REF_INPUT:-$(read_json '.kernelsu.branch')}"
         susfs_ref="${SUSFS_REF_INPUT:-$(read_json '.susfs.branch')}"
+        build_user=wee
+        build_host=mrvoki
+
+        case "$ksun_ref" in
+          dev|stable)
+            ;;
+          *)
+            printf 'Unsupported KernelSU Next branch: %s\n' "$ksun_ref" >&2
+            exit 2
+            ;;
+        esac
 
         case "$OPTIMIZE_LEVEL_INPUT" in
           O1|O2|O3)
@@ -185,16 +144,6 @@ runs:
 
         if [[ -n "$LOCALVERSION_INPUT" && ! "$LOCALVERSION_INPUT" =~ ^-[A-Za-z0-9._+-]+$ ]]; then
           printf 'Invalid localversion: %s (expected a suffix beginning with -)\n' "$LOCALVERSION_INPUT" >&2
-          exit 2
-        fi
-
-        if [[ ! "$BUILD_USER_INPUT" =~ ^[A-Za-z0-9._-]+$ ]]; then
-          printf 'Invalid build user: %s\n' "$BUILD_USER_INPUT" >&2
-          exit 2
-        fi
-
-        if [[ ! "$BUILD_HOST_INPUT" =~ ^[A-Za-z0-9._-]+$ ]]; then
-          printf 'Invalid build host: %s\n' "$BUILD_HOST_INPUT" >&2
           exit 2
         fi
 
@@ -220,14 +169,14 @@ runs:
 
         {
           printf 'MANIFEST_PATH=%s\n' "$manifest"
-          printf 'PACKAGE_MANIFESTS=%s\n' "$package_manifests"
+          printf 'PACKAGE_DEVICES=%s\n' "$package_devices"
           printf 'PACKAGE_PHONE_3A=%s\n' "$package_phone_3a"
           printf 'PACKAGE_PHONE_3A_PRO=%s\n' "$package_phone_3a_pro"
           printf 'PACKAGE_PHONE_4A=%s\n' "$package_phone_4a"
           printf 'DEVICE=%s\n' "$device"
-          printf 'DEVICE_NAME=%s\n' "$(read_json '.name')"
+          printf 'DEVICE_NAME=%s\n' "$device_name"
           printf 'CODENAME=%s\n' "$codename"
-          printf 'MODEL=%s\n' "$(read_json '.model')"
+          printf 'MODEL=%s\n' "$model"
           printf 'SOC=%s\n' "$(read_json '.soc')"
           printf 'ANDROID=%s\n' "$(read_json '.android')"
           printf 'KERNEL_REPOSITORY=%s\n' "$(read_json '.kernel.repository')"
@@ -249,8 +198,8 @@ runs:
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
           printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
-          printf 'KBUILD_BUILD_USER=%s\n' "$BUILD_USER_INPUT"
-          printf 'KBUILD_BUILD_HOST=%s\n' "$BUILD_HOST_INPUT"
+          printf 'KBUILD_BUILD_USER=%s\n' "$build_user"
+          printf 'KBUILD_BUILD_HOST=%s\n' "$build_host"
           printf 'DEVELOPER_MODE=%s\n' "$DEVELOPER_MODE_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
@@ -274,7 +223,7 @@ runs:
           echo "| Field | Value |"
           echo "|---|---|"
           echo "| Build target | $codename |"
-          echo "| Packages | $(jq -r 'join(", ")' <<< "$package_manifests") |"
+          echo "| Packages | $(jq -r 'map(.device) | join(", ")' <<< "$package_devices") |"
           echo "| Kernel ref | \`$kernel_ref\` |"
           echo "| KSUN ref | \`$ksun_ref\` |"
           echo "| SUSFS ref | \`$susfs_ref\` |"
@@ -282,7 +231,7 @@ runs:
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
           echo "| TCP congestion control | \`bbr3\` |"
           echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
-          echo "| Build identity | \`$BUILD_USER_INPUT@$BUILD_HOST_INPUT\` |"
+          echo "| Build identity | \`$build_user@$build_host\` |"
           echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
@@ -434,7 +383,11 @@ runs:
         fi
 
         ksu_patch="$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
-        fix_dir="$PATCHES_DIR/next/susfs_fix_patches/$susfs_version"
+        if [[ "$KSU_REF" == stable ]]; then
+          fix_dir="$PATCHES_DIR/next/susfs_fix_patches/stable/$susfs_version"
+        else
+          fix_dir="$PATCHES_DIR/next/susfs_fix_patches/$susfs_version"
+        fi
         ksu_patch_status=0
         patch \
           --directory="$ksu_dir" \
@@ -459,6 +412,35 @@ runs:
 
           mkdir -p "$(dirname "$reject_target")"
           cp "$reject_file" "$reject_target"
+
+          if [[ "$KSU_REF" == stable && "$reject_relative" == kernel/Kconfig.rej ]]; then
+            kconfig_block="$patch_diagnostics/ksun-susfs-kconfig"
+            sed -n '/^+menu "KernelSU - SUSFS"$/,/^+endmenu$/p' "$ksu_patch" | sed 's/^+//' > "$kconfig_block"
+
+            if ! grep -q '^config KSU_SUSFS$' "$kconfig_block"; then
+              printf 'Could not extract SUSFS Kconfig block\n' >&2
+              exit 1
+            fi
+
+            awk -v block="$kconfig_block" '
+              { lines[NR] = $0 }
+              END {
+                last = 0
+                for (i = 1; i <= NR; i++)
+                  if (lines[i] == "endmenu") last = i
+                if (!last) exit 1
+                for (i = 1; i <= NR; i++) {
+                  if (i == last) {
+                    while ((getline line < block) > 0) print line
+                    close(block)
+                  }
+                  print lines[i]
+                }
+              }
+            ' "$ksu_dir/kernel/Kconfig" > "$ksu_dir/kernel/Kconfig.susfs.tmp"
+            mv "$ksu_dir/kernel/Kconfig.susfs.tmp" "$ksu_dir/kernel/Kconfig"
+            continue
+          fi
 
           if [[ ! -f "$fix_patch" ]]; then
             printf 'Missing KernelSU Next compatibility patch: %s\n' "$fix_patch" >&2
@@ -964,17 +946,16 @@ runs:
         set -Eeuo pipefail
         kernel_version="$KERNEL_RELEASE"
 
-        while IFS= read -r variant_manifest_input; do
-          variant_manifest="$GITHUB_WORKSPACE/$variant_manifest_input"
-          variant_device="$(jq -er '.device' "$variant_manifest")"
+        while IFS= read -r variant; do
+          variant_device="$(jq -er '.device' <<< "$variant")"
 
           if [[ "$variant_device" == "$DEVICE" ]]; then
             continue
           fi
 
-          variant_name="$(jq -er '.name' "$variant_manifest")"
-          variant_codename="$(jq -er '.codename' "$variant_manifest")"
-          variant_model="$(jq -er '.model' "$variant_manifest")"
+          variant_name="$(jq -er '.name' <<< "$variant")"
+          variant_codename="$CODENAME"
+          variant_model="$(jq -er '.model' <<< "$variant")"
           variant_artifact_dir="$ARTIFACT_ROOT/$variant_device"
           variant_ak3_dir="$BUILD_ROOT/AnyKernel3-$variant_device"
           variant_ak3_zip="Nothing-$variant_device-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
@@ -1060,7 +1041,7 @@ runs:
             echo "| AnyKernel3 | \`$variant_ak3_zip\` |"
             echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-        done < <(jq -r '.[]' <<< "$PACKAGE_MANIFESTS")
+        done < <(jq -c '.[]' <<< "$PACKAGE_DEVICES")
 
     - name: Upload Phone 3a AnyKernel3
       if: ${{ env.PACKAGE_PHONE_3A == 'true' }}

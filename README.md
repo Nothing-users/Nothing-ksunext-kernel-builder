@@ -10,12 +10,12 @@
 | Nothing Phone (3a) Pro | `asteroids` | A059P | `sm7635/b/mr` |
 | Nothing Phone (4a) | `frogger` | A069 | `sm7635/b/mr_Frogger` |
 
-3a и 3a Pro компилируются один раз, затем упаковываются в отдельные ZIP и артефакты.
+3a и 3a Pro описаны одним манифестом, компилируются один раз, затем упаковываются в отдельные ZIP и артефакты.
 
 ## ⚙️ Что используется
 
 - [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
-- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev`
+- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev` или `stable`
 - [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1-dev`
 - Android Clang `clang-r487747c`
 - [Nothing AnyKernel3](https://github.com/weekanya/AnyKernel3)
@@ -30,18 +30,20 @@
 
 | Параметр | По умолчанию | Назначение |
 |---|---|---|
-| `device` | `all` | Одно устройство или вся линейка |
+| `device` | `all` | Линейка 3a, Phone 4a или все устройства |
 | `kernel_ref` | из манифеста | Ветка, тег или commit NothingOSS |
-| `ksun_ref` | `dev` | Ветка, тег или commit KSUN |
+| `ksun_ref` | `dev` | Ветка KSUN: `dev` или `stable` |
 | `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
 | `optimize_level` | `O2` | Оптимизация `O1`, `O2` или `O3` |
 | `create_release` | включено | Создать Release или developer prerelease |
 | `developer_mode` | выключено | Сохранить patch-логи, diff, `.rej` и `.orig` |
 
+Build identity неизменно задаётся composite action: `wee@mrvoki`.
+
 ## 🧩 Патчи
 
 1. На официальный KSUN применяется `10_enable_susfs_for_ksu.patch`.
-2. Конфликты с текущим `dev` закрываются закреплёнными [WildKernels fixes](https://github.com/WildKernels/kernel_patches) для SUSFS v2.2.0, включая hook-mode и toolkit.
+2. Конфликты с `dev` и `stable` закрываются отдельными закреплёнными [WildKernels fixes](https://github.com/WildKernels/kernel_patches) для SUSFS v2.2.0, включая hook-mode и toolkit.
 3. Для Nothing 6.1.134 добавляется отсутствующий `linux/dma-buf.h`.
 4. Для Nothing 6.1.157 удаляется несовместимый `trace/hooks/blk.h`, если он присутствует.
 5. К ядру применяется `50_add_susfs_in_gki-android14-6.1.patch`.

@@ -4,10 +4,8 @@
   "type": "object",
   "required": [
     "schema",
-    "device",
-    "name",
+    "devices",
     "codename",
-    "model",
     "soc",
     "android",
     "kernel",
@@ -21,16 +19,35 @@
     "schema": {
       "const": 1
     },
-    "device": {
-      "type": "string"
-    },
-    "name": {
-      "type": "string"
+    "devices": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "device",
+          "name",
+          "model"
+        ],
+        "properties": {
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "codename": {
-      "type": "string"
-    },
-    "model": {
       "type": "string"
     },
     "soc": {

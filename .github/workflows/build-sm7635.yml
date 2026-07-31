@@ -10,8 +10,7 @@ on:
         type: choice
         options:
           - all
-          - phone-3a
-          - phone-3a-pro
+          - phone-3a-series
           - phone-4a
       kernel_ref:
         description: Optional NothingOSS branch, tag or commit override
@@ -19,10 +18,13 @@ on:
         default: ""
         type: string
       ksun_ref:
-        description: KernelSU Next branch or commit
-        required: false
+        description: KernelSU Next branch
+        required: true
         default: dev
-        type: string
+        type: choice
+        options:
+          - dev
+          - stable
       susfs_ref:
         description: SUSFS branch or commit, empty selects android14-6.1 automatically
         required: false
@@ -37,16 +39,6 @@ on:
           - O1
           - O2
           - O3
-      build_user:
-        description: Build user shown before @
-        required: false
-        default: "wee"
-        type: string
-      build_host:
-        description: Build host shown after @
-        required: false
-        default: "mrvoki"
-        type: string
       create_release:
         description: Create GitHub Release or developer prerelease
         required: true
@@ -79,12 +71,12 @@ jobs:
         run: |
           case "$DEVICE" in
             all)
-              matrix='{"include":[{"device":"asteroids","manifest":"manifests/sm7635/phone-3a.json","package_manifests":["manifests/sm7635/phone-3a.json","manifests/sm7635/phone-3a-pro.json"]},{"device":"frogger","manifest":"manifests/sm7635/phone-4a.json","package_manifests":["manifests/sm7635/phone-4a.json"]}]}'
+              matrix='{"include":[{"device":"asteroids","manifest":"manifests/sm7635/phone-3a-series.json"},{"device":"frogger","manifest":"manifests/sm7635/phone-4a.json"}]}'
               ;;
-            phone-3a|phone-3a-pro|phone-4a)
+            phone-3a-series|phone-4a)
               manifest="manifests/sm7635/$DEVICE.json"
               codename="$(jq -er '.codename' "$manifest")"
-              matrix="$(jq -cn --arg device "$codename" --arg manifest "$manifest" '{include:[{device:$device,manifest:$manifest,package_manifests:[$manifest]}]}')"
+              matrix="$(jq -cn --arg device "$codename" --arg manifest "$manifest" '{include:[{device:$device,manifest:$manifest}]}')"
               ;;
             *)
               printf 'Unsupported device: %s\n' "$DEVICE" >&2
@@ -107,13 +99,10 @@ jobs:
         uses: ./.github/actions/build-kernel
         with:
           manifest: ${{ matrix.manifest }}
-          package_manifests: ${{ toJSON(matrix.package_manifests) }}
           kernel_ref: ${{ inputs.kernel_ref }}
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
-          build_user: ${{ inputs.build_user }}
-          build_host: ${{ inputs.build_host }}
           developer_mode: ${{ inputs.developer_mode }}
 
   release:

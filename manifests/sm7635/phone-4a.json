@@ -1,9 +1,13 @@
 {
   "schema": 1,
-  "device": "phone-4a",
-  "name": "Nothing Phone (4a)",
+  "devices": [
+    {
+      "device": "phone-4a",
+      "name": "Nothing Phone (4a)",
+      "model": "A069"
+    }
+  ],
   "codename": "frogger",
-  "model": "A069",
   "soc": "sm7635",
   "android": "android14-6.1",
   "kernel": {
