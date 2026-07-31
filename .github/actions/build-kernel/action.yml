@@ -549,7 +549,6 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
-          LOCALVERSION="$LOCALVERSION" \
           "$KERNEL_DEFCONFIG"
 
         while IFS='=' read -r option value; do
@@ -568,28 +567,38 @@ runs:
           esac
         done < "$CONFIG_FRAGMENT"
 
-        # Keep uname -r clean and deterministic. LOCALVERSION is supplied on
-        # the make command line; the config must not add another suffix.
+        # Store the requested suffix in the kernel config so setlocalversion
+        # keeps it while the SCM/git suffix is disabled below.
         "$KERNEL_DIR/scripts/config" \
           --file "$OUT_DIR/.config" \
-          --set-str LOCALVERSION ""
+          --set-str LOCALVERSION "$LOCALVERSION"
         "$KERNEL_DIR/scripts/config" \
           --file "$OUT_DIR/.config" \
           --disable LOCALVERSION_AUTO
 
-        # NothingOSS setlocalversion still appends -g<commit>-dirty even with
-        # CONFIG_LOCALVERSION_AUTO disabled. Replace it with a no-op because
-        # this action always passes the requested LOCALVERSION explicitly.
+        # NothingOSS can append -g<commit>-dirty even when
+        # CONFIG_LOCALVERSION_AUTO is disabled. Keep the normal script logic
+        # (including CONFIG_LOCALVERSION), but make scm_version() return empty.
         setlocalversion="$KERNEL_DIR/scripts/setlocalversion"
         if [[ ! -f "$setlocalversion" ]]; then
           printf 'Missing setlocalversion script: %s\n' "$setlocalversion" >&2
           exit 1
         fi
         cp -f "$setlocalversion" "$setlocalversion.original"
-        printf '%s\n' \
-          '#!/bin/sh' \
-          '# SCM suffix intentionally disabled by NothingUsers kernel builder.' \
-          'exit 0' > "$setlocalversion"
+        python3 - "$setlocalversion" <<'PYSETLOCALVERSION'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+pattern = re.compile(r'(?m)^(scm_version\(\)\s*\{\s*\n)')
+replacement = r'\1\t# Disabled by NothingUsers kernel builder: do not append git/dirty suffix.\n\treturn 0\n'
+updated, count = pattern.subn(replacement, text, count=1)
+if count != 1:
+    raise SystemExit("Could not patch scm_version() in scripts/setlocalversion")
+path.write_text(updated)
+PYSETLOCALVERSION
         chmod +x "$setlocalversion"
 
         make \
@@ -600,7 +609,6 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
-          LOCALVERSION="$LOCALVERSION" \
           olddefconfig
 
         while IFS= read -r expected; do
@@ -651,7 +659,6 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
-          LOCALVERSION="$LOCALVERSION" \
           KCFLAGS="$kernel_cflags" \
           -j"$(nproc)" \
           Image 2>&1 | tee "$BUILD_ROOT/build.log"
@@ -665,7 +672,7 @@ runs:
           exit 1
         fi
 
-        kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" LOCALVERSION="$LOCALVERSION" kernelrelease)"
+        kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" kernelrelease)"
         base_version="$(make -s -C "$KERNEL_DIR" kernelversion)"
         expected_release="${base_version}${LOCALVERSION}"
 
