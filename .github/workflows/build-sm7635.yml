@@ -37,6 +37,16 @@ on:
           - O1
           - O2
           - O3
+      build_user:
+        description: Build user shown before @
+        required: false
+        default: "wee"
+        type: string
+      build_host:
+        description: Build host shown after @
+        required: false
+        default: "vokintos"
+        type: string
       create_release:
         description: Create GitHub Release or developer prerelease
         required: true
@@ -102,6 +112,8 @@ jobs:
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
+          build_user: ${{ inputs.build_user }}
+          build_host: ${{ inputs.build_host }}
           developer_mode: ${{ inputs.developer_mode }}
 
   release:
@@ -189,3 +201,4 @@ jobs:
             --title "$release_title" \
             --notes "$notes" \
             "${release_flags[@]}"
+            
