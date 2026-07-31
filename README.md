@@ -13,7 +13,7 @@
 
 - [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
 - [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev`
-- [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1-dev`
+- [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1`
 - Android Clang `clang-r487747c`
 - [Nothing AnyKernel3](https://github.com/weekanya/AnyKernel3)
 
