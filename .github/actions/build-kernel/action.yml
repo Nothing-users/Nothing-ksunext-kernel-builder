@@ -588,6 +588,10 @@ runs:
         python3 -c 'from pathlib import Path; import re, sys; p = Path(sys.argv[1]); t = p.read_text(); u, n = re.subn(r"(?m)^(scm_version\(\)\s*\{\s*\n)", r"\1\t# Disabled by NothingUsers kernel builder: do not append git/dirty suffix.\n\treturn 0\n", t, count=1); assert n == 1, "Could not patch scm_version() in scripts/setlocalversion"; p.write_text(u)' "$setlocalversion"
         chmod +x "$setlocalversion"
 
+        # The suffix is now stored in CONFIG_LOCALVERSION. Clear the
+        # environment variable so olddefconfig cannot append it a second time.
+        unset LOCALVERSION
+
         make \
           -C "$KERNEL_DIR" \
           O="$OUT_DIR" \
@@ -633,6 +637,13 @@ runs:
 
         KBUILD_BUILD_TIMESTAMP="$(git -C "$KERNEL_DIR" show -s --format=%cD HEAD)"
         SOURCE_DATE_EPOCH="$(git -C "$KERNEL_DIR" show -s --format=%ct HEAD)"
+
+        # CONFIG_LOCALVERSION already contains the requested suffix.
+        # Do not also pass the exported LOCALVERSION variable to make,
+        # otherwise the kernel appends the same suffix twice.
+        requested_localversion="$LOCALVERSION"
+        unset LOCALVERSION
+
         kernel_cflags="-$OPTIMIZE_LEVEL"
         build_start="$(date +%s)"
 
@@ -661,7 +672,7 @@ runs:
 
         kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" kernelrelease)"
         base_version="$(make -s -C "$KERNEL_DIR" kernelversion)"
-        expected_release="${base_version}${LOCALVERSION}"
+        expected_release="${base_version}${requested_localversion}"
 
         if [[ "$kernel_release" != "$expected_release" ]]; then
           printf 'Unexpected kernel release. Expected %s, got %s\n' \
