@@ -37,11 +37,6 @@ on:
           - O1
           - O2
           - O3
-      localversion:
-        description: Kernel LOCALVERSION suffix, must start with -
-        required: false
-        default: "-NothingUsers"
-        type: string
       build_user:
         description: Build user shown before @
         required: false
@@ -117,7 +112,6 @@ jobs:
           ksun_ref: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
-          localversion: ${{ inputs.localversion }}
           build_user: ${{ inputs.build_user }}
           build_host: ${{ inputs.build_host }}
           developer_mode: ${{ inputs.developer_mode }}
@@ -207,3 +201,4 @@ jobs:
             --title "$release_title" \
             --notes "$notes" \
             "${release_flags[@]}"
+            
