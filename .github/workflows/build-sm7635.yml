@@ -45,7 +45,7 @@ on:
       build_host:
         description: Build host shown after @
         required: false
-        default: "vokintos"
+        default: "mrvoki"
         type: string
       create_release:
         description: Create GitHub Release or developer prerelease

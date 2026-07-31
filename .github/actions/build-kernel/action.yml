@@ -28,7 +28,7 @@ inputs:
   localversion:
     description: Exact custom kernel LOCALVERSION suffix
     required: false
-    default: "-NothingUsers"
+    default: "-nothing-users"
   build_user:
     description: Kernel build user shown before @ in uname version
     required: false
