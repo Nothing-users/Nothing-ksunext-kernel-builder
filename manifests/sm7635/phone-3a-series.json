@@ -2,14 +2,9 @@
   "schema": 1,
   "devices": [
     {
-      "device": "phone-3a",
-      "name": "Nothing Phone (3a)",
-      "model": "A059"
-    },
-    {
-      "device": "phone-3a-pro",
-      "name": "Nothing Phone (3a) Pro",
-      "model": "A059P"
+      "device": "phone-3a-series",
+      "name": "Nothing Phone (3a) series",
+      "model": "A059/A059P"
     }
   ],
   "codename": "asteroids",

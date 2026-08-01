@@ -1,4 +1,4 @@
-name: Build SM7635 Kernel
+name: Nothing Kernel Builder
 
 on:
   workflow_dispatch:
@@ -53,6 +53,11 @@ on:
           - O1
           - O2
           - O3
+      extra_patches:
+        description: Apply optional patches (BBRv3, Nothing kernel fixups). KSUN and SUSFS are always applied.
+        required: true
+        default: true
+        type: boolean
       create_release:
         description: Create GitHub Release or developer prerelease
         required: true
@@ -129,6 +134,7 @@ jobs:
           ksun_patchset: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
+          extra_patches: ${{ inputs.extra_patches }}
           developer_mode: ${{ inputs.developer_mode }}
 
   release:
@@ -179,16 +185,23 @@ jobs:
           KSUN_PATCHSET: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
           SUSFS_REF: ${{ inputs.susfs_ref }}
           OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
+          EXTRA_PATCHES: ${{ inputs.extra_patches }}
           DEVELOPER_MODE: ${{ inputs.developer_mode }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -Eeuo pipefail
-          tag="sm7635-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          tag="nothing-kernel-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           effective_kernel_ref="${KERNEL_REF:-manifest default}"
           effective_susfs_ref="${SUSFS_REF:-gki-android14-6.1-dev}"
 
+          if [[ "$EXTRA_PATCHES" == true ]]; then
+            tcp_cc=bbr3
+          else
+            tcp_cc=cubic
+          fi
+
           notes="$(printf '%s\n' \
-            'Nothing SM7635 KernelSU Next + SUSFS build' \
+            'Nothing Kernel Builder' \
             '' \
             "Build result: $BUILD_RESULT" \
             "Developer mode: $DEVELOPER_MODE" \
@@ -198,18 +211,19 @@ jobs:
             "KernelSU Next patchset: $KSUN_PATCHSET" \
             "SUSFS ref: $effective_susfs_ref" \
             "Optimization: $OPTIMIZE_LEVEL" \
-            "TCP congestion control: bbr3" \
+            "Extra patches: $EXTRA_PATCHES" \
+            "TCP congestion control: $tcp_cc" \
             '' \
             'AnyKernel3 ZIP files are flashable packages.' \
             'The packages have not yet been boot-tested on physical devices.' \
             'Raw Image files inside the full archives must not be flashed directly with fastboot.')"
 
           release_flags=()
-          release_title="Nothing SM7635 build #$GITHUB_RUN_NUMBER"
+          release_title="Nothing Kernel Builder #$GITHUB_RUN_NUMBER"
 
           if [[ "$DEVELOPER_MODE" == true ]]; then
             release_flags+=(--prerelease)
-            release_title="Nothing SM7635 developer build #$GITHUB_RUN_NUMBER"
+            release_title="Nothing Kernel Builder dev #$GITHUB_RUN_NUMBER"
           fi
 
           gh release create \

@@ -1,67 +1,69 @@
 # Nothing Kernel Builder
 
-Сборка ядер Nothing с KernelSU Next, SUSFS и готовым AnyKernel3 ZIP через GitHub Actions.
+Nothing kernels built with KernelSU Next, SUSFS and a ready-to-flash AnyKernel3 ZIP via GitHub Actions.
 
-## Устройства
+## Devices
 
-| Устройство | Codename | Модель | Ветка NothingOSS |
+| Device | Codename | Model | NothingOSS branch |
 |---|---|---|---|
 | Nothing Phone (3a) | `asteroids` | A059 | `sm7635/b/mr` |
 | Nothing Phone (3a) Pro | `asteroids` | A059P | `sm7635/b/mr` |
 | Nothing Phone (4a) | `frogger` | A069 | `sm7635/b/mr_Frogger` |
 
-3a и 3a Pro описаны одним манифестом, компилируются один раз, затем упаковываются в отдельные ZIP и артефакты.
+The 3a and 3a Pro share the same kernel and are described by a single manifest, compiled once and packaged as one ZIP for the series.
 
-## Что используется
+## What is used
 
 - [NothingOSS kernel 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
-- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next), ветка `dev`, `stable` или пользовательский ref
-- [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), ветка `gki-android14-6.1`
+- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next) — `dev`, `stable` or a custom ref
+- [SUSFS](https://gitlab.com/simonpunk/susfs4ksu), branch `gki-android14-6.1`
 - Android Clang `clang-r487747c`
 - [Nothing AnyKernel3](https://github.com/weekanya/AnyKernel3)
 
-Версии AK3 и compatibility-патчей закреплены по commit SHA. Ветки NothingOSS, KSUN и SUSFS можно заменить при ручном запуске.
+AK3 and compatibility patch versions are pinned by commit SHA. The NothingOSS, KSUN and SUSFS refs can be overridden at manual dispatch.
 
-## Запуск
+## Running a build
 
-Открой `Actions → Build SM7635 Kernel → Run workflow`.
+Open `Actions → Nothing Kernel Builder → Run workflow`.
 
-`ccache` сохраняется отдельно для `asteroids` и `frogger`. Первая сборка заполняет кэш, следующие переиспользуют его при совпадающем Clang и исходниках.
+`ccache` is stored per codename (`asteroids`, `frogger`). The first build warms the cache; subsequent builds reuse it while Clang and sources match.
 
-| Параметр | По умолчанию | Назначение |
+| Input | Default | Purpose |
 |---|---|---|
-| `device` | `all` | Линейка 3a, Phone 4a или все устройства |
-| `kernel_ref` | из манифеста | Ветка, тег или commit NothingOSS |
-| `ksun_ref` | `dev` | `dev`, `stable` или `custom` |
-| `ksun_custom_ref` | пусто | Branch, tag или commit KSUN для режима `custom` |
-| `ksun_patchset` | `dev` | Набор compatibility-патчей `dev` или `stable` для custom ref |
-| `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
-| `optimize_level` | `O2` | Оптимизация `O1`, `O2` или `O3` |
-| `create_release` | включено | Создать Release или developer prerelease |
-| `developer_mode` | выключено | Сохранить patch-логи, diff, `.rej` и `.orig` |
+| `device` | `all` | 3a series, Phone 4a or all devices |
+| `kernel_ref` | manifest default | NothingOSS branch, tag or commit |
+| `ksun_ref` | `dev` | `dev`, `stable` or `custom` |
+| `ksun_custom_ref` | empty | KSUN branch, tag or commit for `custom` mode |
+| `ksun_patchset` | `dev` | Compatibility patch set (`dev` or `stable`) for custom refs |
+| `susfs_ref` | auto | SUSFS branch, tag or commit |
+| `optimize_level` | `O2` | Compiler optimization: `O1`, `O2` or `O3` |
+| `extra_patches` | enabled | Apply optional patches (BBRv3, Nothing kernel fixups); KSUN + SUSFS are always applied |
+| `create_release` | enabled | Publish a GitHub Release or developer prerelease |
+| `developer_mode` | disabled | Keep patch logs, diffs, `.rej` and `.orig` files |
 
-Build identity неизменно задаётся composite action: `wee@mrvoki`.
+Build identity is fixed by the composite action: `wee@mrvoki`.
 
-## Патчи
+## Patches
 
-1. На официальный KSUN применяется `10_enable_susfs_for_ksu.patch`.
-2. Конфликты с `dev` и `stable` закрываются отдельными закреплёнными [WildKernels fixes](https://github.com/WildKernels/kernel_patches) для SUSFS v2.2.0, включая hook-mode и toolkit.
-3. Для Nothing 6.1.134 добавляется отсутствующий `linux/dma-buf.h`.
-4. Для Nothing 6.1.157 удаляется несовместимый `trace/hooks/blk.h`, если он присутствует.
-5. К ядру применяется `50_add_susfs_in_gki-android14-6.1.patch`.
+1. `10_enable_susfs_for_ksu.patch` is applied to the upstream KSUN tree.
+2. Conflicts against `dev` and `stable` are resolved by pinned [WildKernels fixes](https://github.com/WildKernels/kernel_patches) for SUSFS v2.2.0, including hook-mode and toolkit.
+3. For Nothing 6.1.134 the missing `linux/dma-buf.h` include is added.
+4. For Nothing 6.1.157 the incompatible `trace/hooks/blk.h` include is removed if present.
+5. `50_add_susfs_in_gki-android14-6.1.patch` is applied to the kernel tree.
+6. Optional: BBRv3 backport for android14-6.1 (sysctl helpers + main patch), enabled when `extra_patches` is on.
 
-Неизвестный или неразрешённый `.rej` останавливает сборку. В `developer_mode` диагностические файлы сохраняются даже при падении job.
+Any unknown or unresolved `.rej` stops the build. In `developer_mode` diagnostic files are uploaded even when the job fails.
 
-## Результат
+## Output
 
-- `<device>-anykernel3` — только прошиваемый `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
-- `<device>-build-files` — `Image`, config, `System.map`, логи и metadata
-- `<target>-developer-diagnostics` — `.rej`, `.orig`, patch-логи и diff при включённом developer mode
+- `<device>-anykernel3` — the flashable `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
+- `<device>-build-files` — `Image`, config, `System.map`, logs and metadata
+- `<target>-developer-diagnostics` — `.rej`, `.orig`, patch logs and diffs when developer mode is on
 
-AK3 проверяет codename, определяет активный A/B-слот и заменяет только kernel в `boot`, сохраняя штатный ramdisk. Для каждого устройства создаётся отдельный ZIP.
+AK3 checks the codename, detects the active A/B slot and replaces only the kernel in `boot`, keeping the stock ramdisk.
 
-## Важно
+## Notes
 
-Загрузчик должен быть разблокирован. Перед установкой сохрани оригинальный `boot.img`.
+The bootloader must be unlocked. Back up the original `boot.img` before flashing.
 
-Не прошивай сырой `Image` командой `fastboot flash boot Image`. Цепочка патчей и структура ZIP проверены, но загрузочного теста на физическом устройстве пока не было. До него релизы следует считать тестовыми.
+Do not flash the raw `Image` with `fastboot flash boot Image`. The patch chain and ZIP layout are verified, but no boot test has been done on a physical device yet, so releases should be considered experimental until then.
