@@ -1,3 +1,7 @@
+English | [Русский](docs/README_RU.md)
+
+---
+
 # Nothing Kernel Builder
 
 > [!WARNING]
