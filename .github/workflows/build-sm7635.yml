@@ -73,7 +73,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-24.04
+    runs-on: mrvoki-runner
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -112,7 +112,7 @@ jobs:
 
   build:
     needs: prepare
-    runs-on: ubuntu-24.04
+    runs-on: mrvoki-runner
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -134,7 +134,7 @@ jobs:
   release:
     needs: build
     if: ${{ !cancelled() && inputs.create_release && (needs.build.result == 'success' || inputs.developer_mode) }}
-    runs-on: ubuntu-24.04
+    runs-on: mrvoki-runner
     permissions:
       contents: write
     steps:
