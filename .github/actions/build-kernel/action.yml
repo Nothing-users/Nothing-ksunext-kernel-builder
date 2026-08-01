@@ -285,17 +285,28 @@ runs:
         printf 'KERNEL_COMMIT=%s\n' "$kernel_commit" >> "$GITHUB_ENV"
         printf 'NothingOSS commit: %s\n' "$kernel_commit"
 
+    - name: Restore Android Clang
+      id: clang_cache_restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ env.TOOLCHAIN_DIR }}/${{ env.TOOLCHAIN_VERSION }}
+        key: clang-${{ runner.os }}-${{ runner.arch }}-${{ env.TOOLCHAIN_VERSION }}-${{ env.TOOLCHAIN_BRANCH }}
+
     - name: Sync Android Clang
       shell: bash
+      env:
+        CLANG_CACHE_HIT: ${{ steps.clang_cache_restore.outputs.cache-hit }}
       run: |
         set -Eeuo pipefail
-        git clone \
-          --filter=blob:none \
-          --single-branch \
-          --branch "$TOOLCHAIN_BRANCH" \
-          --depth=1 \
-          "$TOOLCHAIN_REPOSITORY" \
-          "$TOOLCHAIN_DIR"
+        if [[ "$CLANG_CACHE_HIT" != true ]]; then
+          git clone \
+            --filter=blob:none \
+            --single-branch \
+            --branch "$TOOLCHAIN_BRANCH" \
+            --depth=1 \
+            "$TOOLCHAIN_REPOSITORY" \
+            "$TOOLCHAIN_DIR"
+        fi
 
         clang_bin="$TOOLCHAIN_DIR/$TOOLCHAIN_VERSION/bin"
 
@@ -308,6 +319,13 @@ runs:
         clang_version="$("$clang_bin/clang" --version | head -n 1)"
         printf 'CLANG_VERSION=%s\n' "$clang_version" >> "$GITHUB_ENV"
         printf '%s\n' "$clang_version"
+
+    - name: Save Android Clang
+      if: ${{ steps.clang_cache_restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.TOOLCHAIN_DIR }}/${{ env.TOOLCHAIN_VERSION }}
+        key: ${{ steps.clang_cache_restore.outputs.cache-primary-key }}
 
     - name: Integrate KernelSU Next
       shell: bash
