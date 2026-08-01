@@ -588,6 +588,21 @@ runs:
         ccache --max-size=3G
         ccache --zero-stats
 
+        ksu_kconfig="$KERNEL_DIR/drivers/kernelsu/Kconfig"
+        if [[ ! -f "$ksu_kconfig" ]]; then
+          printf 'KernelSU Next Kconfig is missing: %s\n' "$ksu_kconfig" >&2
+          exit 1
+        fi
+
+        if [[ "$KSU_PATCHSET" == stable ]]; then
+          sed -i '/^-[[:space:]]/d' "$ksu_kconfig"
+        fi
+
+        if grep -nE '^[+-][[:space:]]' "$ksu_kconfig"; then
+          printf 'KernelSU Next Kconfig contains unresolved diff lines before defconfig\n' >&2
+          exit 1
+        fi
+
         make \
           -C "$KERNEL_DIR" \
           O="$OUT_DIR" \
