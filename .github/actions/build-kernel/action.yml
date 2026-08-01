@@ -430,7 +430,8 @@ runs:
 
           if [[ "$KSU_PATCHSET" == stable && "$reject_relative" == kernel/Kconfig.rej ]]; then
             kconfig_block="$patch_diagnostics/ksun-susfs-kconfig"
-            sed -n '/^+menu "KernelSU - SUSFS"$/,/^+endmenu$/p' "$ksu_patch" | sed -n 's/^+//p' > "$kconfig_block"
+            sed -n '/^+menu "KernelSU - SUSFS"$/,/^+endmenu$/p' "$ksu_patch" |
+              sed -n -e 's/^+//p' -e 's/^ //p' > "$kconfig_block"
 
             if ! grep -q '^config KSU_SUSFS$' "$kconfig_block"; then
               printf 'Could not extract SUSFS Kconfig block\n' >&2
