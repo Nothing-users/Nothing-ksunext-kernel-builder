@@ -37,7 +37,7 @@ Open `Actions → Nothing Kernel Builder → Run workflow`.
 | `ksun_patchset` | `dev` | Compatibility patch set (`dev` or `stable`) for custom refs |
 | `susfs_ref` | auto | SUSFS branch, tag or commit |
 | `optimize_level` | `O2` | Compiler optimization: `O1`, `O2` or `O3` |
-| `extra_patches` | enabled | Apply the optional BBRv3 backport; KSUN, SUSFS and Nothing kernel fixups are always applied |
+| `custom_patches` | enabled | Apply optional custom patches; KSUN, SUSFS and Nothing kernel fixups are always applied |
 | `create_release` | enabled | Publish a GitHub Release or developer prerelease |
 | `developer_mode` | disabled | Keep patch logs, diffs, `.rej` and `.orig` files |
 
@@ -50,7 +50,7 @@ Build identity is fixed by the composite action: `wee@mrvoki`.
 3. For Nothing 6.1.134 the missing `linux/dma-buf.h` include is added.
 4. For Nothing 6.1.157 the incompatible `trace/hooks/blk.h` include is removed if present.
 5. `50_add_susfs_in_gki-android14-6.1.patch` is applied to the kernel tree.
-6. Optional: BBRv3 backport for android14-6.1 (sysctl helpers + main patch), enabled when `extra_patches` is on.
+6. Optional: BBRv3 backport for android14-6.1 (sysctl helpers + main patch), enabled when `custom_patches` is on.
 
 Any unknown or unresolved `.rej` stops the build. In `developer_mode` diagnostic files are uploaded even when the job fails.
 

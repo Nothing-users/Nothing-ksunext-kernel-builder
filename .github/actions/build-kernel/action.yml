@@ -25,8 +25,8 @@ inputs:
     description: Compiler optimization level
     required: false
     default: O2
-  extra_patches:
-    description: Apply optional BBRv3 patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
+  custom_patches:
+    description: Apply optional custom patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
     required: false
     default: "true"
   localversion:
@@ -61,7 +61,7 @@ runs:
         KSUN_PATCHSET_INPUT: ${{ inputs.ksun_patchset }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
-        EXTRA_PATCHES_INPUT: ${{ inputs.extra_patches }}
+        CUSTOM_PATCHES_INPUT: ${{ inputs.custom_patches }}
         LOCALVERSION_INPUT: ${{ inputs.localversion }}
         DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
@@ -139,11 +139,11 @@ runs:
             ;;
         esac
 
-        case "$EXTRA_PATCHES_INPUT" in
+        case "$CUSTOM_PATCHES_INPUT" in
           true|false)
             ;;
           *)
-            printf 'Unsupported extra_patches value: %s\n' "$EXTRA_PATCHES_INPUT" >&2
+            printf 'Unsupported custom_patches value: %s\n' "$CUSTOM_PATCHES_INPUT" >&2
             exit 2
             ;;
         esac
@@ -201,7 +201,7 @@ runs:
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
-          printf 'EXTRA_PATCHES=%s\n' "$EXTRA_PATCHES_INPUT"
+          printf 'CUSTOM_PATCHES=%s\n' "$CUSTOM_PATCHES_INPUT"
           printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
           printf 'KBUILD_BUILD_USER=%s\n' "$build_user"
           printf 'KBUILD_BUILD_HOST=%s\n' "$build_host"
@@ -216,7 +216,7 @@ runs:
           printf 'ARTIFACT_ROOT=%s\n' "$artifact_root"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
           printf 'CONFIG_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/ksunext-susfs.config"
-          printf 'BBRV3_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/bbrv3.config"
+          printf 'CUSTOM_PATCHES_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/custom-patches.config"
           printf 'CCACHE_DIR=%s\n' "$RUNNER_TEMP/ccache"
         } >> "$GITHUB_ENV"
 
@@ -236,7 +236,7 @@ runs:
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
-          echo "| Extra patches | \`$EXTRA_PATCHES_INPUT\` |"
+          echo "| Custom patches | \`$CUSTOM_PATCHES_INPUT\` |"
           echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
           echo "| Build identity | \`$build_user@$build_host\` |"
           echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
@@ -526,7 +526,7 @@ runs:
           exit "$kernel_patch_status"
         fi
 
-        if [[ "$EXTRA_PATCHES" == true ]]; then
+        if [[ "$CUSTOM_PATCHES" == true ]]; then
           bbrv3_dir="$PATCHES_DIR/common/bbrv3"
           bbrv3_sysctl_add="$bbrv3_dir/sysctl_add_proc_dou8vec_minmax.patch"
           bbrv3_sysctl_fix="$bbrv3_dir/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
@@ -609,8 +609,8 @@ runs:
           "$KERNEL_DEFCONFIG"
 
         fragments=("$CONFIG_FRAGMENT")
-        if [[ "$EXTRA_PATCHES" == true ]]; then
-          fragments+=("$BBRV3_FRAGMENT")
+        if [[ "$CUSTOM_PATCHES" == true ]]; then
+          fragments+=("$CUSTOM_PATCHES_FRAGMENT")
         fi
 
         for fragment in "${fragments[@]}"; do
@@ -862,7 +862,7 @@ runs:
         kernel_version="$KERNEL_RELEASE"
         artifact_name="$DEVICE-build-files"
 
-        if [[ "$EXTRA_PATCHES" == true ]]; then
+        if [[ "$CUSTOM_PATCHES" == true ]]; then
           tcp_cc=bbr3
         else
           tcp_cc=cubic
@@ -875,7 +875,7 @@ runs:
           "Kernel: $kernel_version" \
           "KernelSU Next patchset: $KSU_PATCHSET" \
           "Optimization: $OPTIMIZE_LEVEL" \
-          "Extra patches: $EXTRA_PATCHES" \
+          "Custom patches: $CUSTOM_PATCHES" \
           "TCP congestion control: $tcp_cc" \
           "Flashable package: $AK3_ZIP" \
           "" \
@@ -915,7 +915,7 @@ runs:
           --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
           --arg optimize_level "$OPTIMIZE_LEVEL" \
-          --arg extra_patches "$EXTRA_PATCHES" \
+          --arg custom_patches "$CUSTOM_PATCHES" \
           --arg tcp_congestion_control "$tcp_cc" \
           --arg localversion "$LOCALVERSION" \
           --arg build_user "$KBUILD_BUILD_USER" \
@@ -961,7 +961,7 @@ runs:
             },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
-            extra_patches: ($extra_patches == "true"),
+            custom_patches: ($custom_patches == "true"),
             tcp_congestion_control: $tcp_congestion_control,
             localversion: $localversion,
             build_identity: {
