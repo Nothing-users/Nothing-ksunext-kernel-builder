@@ -483,6 +483,15 @@ runs:
           < "$fix_dir/ksu_toolkit.patch" \
           2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
 
+        if [[ "$KSU_PATCHSET" == stable ]]; then
+          sed -i '/^-[[:space:]]/d' "$ksu_dir/kernel/Kconfig"
+        fi
+
+        if grep -nE '^[+-][[:space:]]' "$ksu_dir/kernel/Kconfig"; then
+          printf 'KernelSU Next Kconfig contains unresolved diff markers\n' >&2
+          exit 1
+        fi
+
         find "$ksu_dir" -type f -name '*.rej' -delete
 
         if ! grep -q '^config KSU_SUSFS$' "$ksu_dir/kernel/Kconfig"; then
