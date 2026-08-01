@@ -261,7 +261,7 @@ runs:
     - name: Restore rolling ccache
       id: ccache_restore
       continue-on-error: true
-      uses: actions/cache/restore@v4
+      uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/ccache
         key: ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
