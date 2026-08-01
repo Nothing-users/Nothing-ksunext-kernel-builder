@@ -1,4 +1,4 @@
-name: Build SM7635 Kernel
+name: Nothing Kernel Builder
 
 on:
   workflow_dispatch:
@@ -183,12 +183,12 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -Eeuo pipefail
-          tag="sm7635-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          tag="nothing-kernel-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           effective_kernel_ref="${KERNEL_REF:-manifest default}"
           effective_susfs_ref="${SUSFS_REF:-gki-android14-6.1-dev}"
 
           notes="$(printf '%s\n' \
-            'Nothing SM7635 KernelSU Next + SUSFS build' \
+            'Nothing Kernel Builder' \
             '' \
             "Build result: $BUILD_RESULT" \
             "Developer mode: $DEVELOPER_MODE" \
@@ -205,11 +205,11 @@ jobs:
             'Raw Image files inside the full archives must not be flashed directly with fastboot.')"
 
           release_flags=()
-          release_title="Nothing SM7635 build #$GITHUB_RUN_NUMBER"
+          release_title="Nothing Kernel Builder #$GITHUB_RUN_NUMBER"
 
           if [[ "$DEVELOPER_MODE" == true ]]; then
             release_flags+=(--prerelease)
-            release_title="Nothing SM7635 developer build #$GITHUB_RUN_NUMBER"
+            release_title="Nothing Kernel Builder dev #$GITHUB_RUN_NUMBER"
           fi
 
           gh release create \

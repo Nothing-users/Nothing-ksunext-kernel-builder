@@ -24,7 +24,7 @@
 
 ## Запуск
 
-Открой `Actions → Build SM7635 Kernel → Run workflow`.
+Открой `Actions → Nothing Kernel Builder → Run workflow`.
 
 `ccache` сохраняется отдельно для `asteroids` и `frogger`. Первая сборка заполняет кэш, следующие переиспользуют его при совпадающем Clang и исходниках.
 

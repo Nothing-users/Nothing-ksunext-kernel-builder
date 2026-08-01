@@ -1,5 +1,5 @@
-name: Build Nothing SM7635 Kernel
-description: Build Nothing SM7635 GKI kernel with KernelSU Next and SUSFS
+name: Nothing Kernel Builder
+description: Build Nothing kernels with KernelSU Next and SUSFS
 
 inputs:
   manifest:
@@ -232,7 +232,7 @@ runs:
         mkdir -p "$build_root" "$artifact_dir" "$RUNNER_TEMP/ccache"
 
         {
-          echo "### Nothing SM7635 build"
+          echo "### Nothing Kernel Builder"
           echo ""
           echo "| Field | Value |"
           echo "|---|---|"
@@ -860,7 +860,7 @@ runs:
         artifact_name="$DEVICE-build-files"
 
         printf '%s\n' \
-          "Nothing SM7635 KernelSU Next + SUSFS" \
+          "Nothing Kernel Builder" \
           "" \
           "Device: $DEVICE_NAME ($CODENAME / $MODEL)" \
           "Kernel: $kernel_version" \
@@ -1041,7 +1041,7 @@ runs:
           ak3_sha256="$(sha256sum "$variant_artifact_dir/$variant_ak3_zip" | awk '{print $1}')"
 
           printf '%s\n' \
-            "Nothing SM7635 KernelSU Next + SUSFS" \
+            "Nothing Kernel Builder" \
             "" \
             "Device: $variant_name ($variant_codename / $variant_model)" \
             "Kernel: $kernel_version" \
