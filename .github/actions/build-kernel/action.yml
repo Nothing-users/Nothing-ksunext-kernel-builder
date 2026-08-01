@@ -13,6 +13,10 @@ inputs:
     description: KernelSU Next branch, tag or commit
     required: false
     default: dev
+  ksun_patchset:
+    description: KernelSU Next compatibility patchset
+    required: false
+    default: ""
   susfs_ref:
     description: Optional SUSFS branch or commit override
     required: false
@@ -50,6 +54,7 @@ runs:
         MANIFEST_INPUT: ${{ inputs.manifest }}
         KERNEL_REF_INPUT: ${{ inputs.kernel_ref }}
         KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
+        KSUN_PATCHSET_INPUT: ${{ inputs.ksun_patchset }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
         LOCALVERSION_INPUT: ${{ inputs.localversion }}
@@ -124,6 +129,23 @@ runs:
         build_user=wee
         build_host=mrvoki
 
+        if [[ -n "$KSUN_PATCHSET_INPUT" ]]; then
+          ksun_patchset="$KSUN_PATCHSET_INPUT"
+        elif [[ "$ksun_ref" == stable ]]; then
+          ksun_patchset=stable
+        else
+          ksun_patchset=dev
+        fi
+
+        case "$ksun_patchset" in
+          dev|stable)
+            ;;
+          *)
+            printf 'Unsupported KernelSU Next compatibility patchset: %s\n' "$ksun_patchset" >&2
+            exit 2
+            ;;
+        esac
+
         case "$OPTIMIZE_LEVEL_INPUT" in
           O1|O2|O3)
             ;;
@@ -180,6 +202,7 @@ runs:
           printf 'TOOLCHAIN_VERSION=%s\n' "$(read_json '.toolchain.version')"
           printf 'KSU_REPOSITORY=%s\n' "$(read_json '.kernelsu.repository')"
           printf 'KSU_REF=%s\n' "$ksun_ref"
+          printf 'KSU_PATCHSET=%s\n' "$ksun_patchset"
           printf 'SUSFS_REPOSITORY=%s\n' "$(read_json '.susfs.repository')"
           printf 'SUSFS_REF=%s\n' "$susfs_ref"
           printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
@@ -217,6 +240,7 @@ runs:
           echo "| Packages | $(jq -r 'map(.device) | join(", ")' <<< "$package_devices") |"
           echo "| Kernel ref | \`$kernel_ref\` |"
           echo "| KSUN ref | \`$ksun_ref\` |"
+          echo "| KSUN patchset | \`$ksun_patchset\` |"
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
@@ -374,7 +398,7 @@ runs:
         fi
 
         ksu_patch="$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
-        if [[ "$KSU_REF" == stable ]]; then
+        if [[ "$KSU_PATCHSET" == stable ]]; then
           fix_dir="$PATCHES_DIR/next/susfs_fix_patches/stable/$susfs_version"
         else
           fix_dir="$PATCHES_DIR/next/susfs_fix_patches/$susfs_version"
@@ -404,7 +428,7 @@ runs:
           mkdir -p "$(dirname "$reject_target")"
           cp "$reject_file" "$reject_target"
 
-          if [[ "$KSU_REF" == stable && "$reject_relative" == kernel/Kconfig.rej ]]; then
+          if [[ "$KSU_PATCHSET" == stable && "$reject_relative" == kernel/Kconfig.rej ]]; then
             kconfig_block="$patch_diagnostics/ksun-susfs-kconfig"
             sed -n '/^+menu "KernelSU - SUSFS"$/,/^+endmenu$/p' "$ksu_patch" | sed 's/^+//' > "$kconfig_block"
 
@@ -815,6 +839,7 @@ runs:
           "" \
           "Device: $DEVICE_NAME ($CODENAME / $MODEL)" \
           "Kernel: $kernel_version" \
+          "KernelSU Next patchset: $KSU_PATCHSET" \
           "Optimization: $OPTIMIZE_LEVEL" \
           "TCP congestion control: bbr3" \
           "Flashable package: $AK3_ZIP" \
@@ -843,6 +868,7 @@ runs:
           --arg kernelsu_repository "$KSU_REPOSITORY" \
           --arg kernelsu_ref "$KSU_REF" \
           --arg kernelsu_commit "$RESOLVED_KSU_COMMIT" \
+          --arg kernelsu_patchset "$KSU_PATCHSET" \
           --arg susfs_repository "$SUSFS_REPOSITORY" \
           --arg susfs_ref "$SUSFS_REF" \
           --arg susfs_commit "$RESOLVED_SUSFS_COMMIT" \
@@ -878,7 +904,8 @@ runs:
             kernelsu: {
               repository: $kernelsu_repository,
               ref: $kernelsu_ref,
-              commit: $kernelsu_commit
+              commit: $kernelsu_commit,
+              patchset: $kernelsu_patchset
             },
             susfs: {
               repository: $susfs_repository,
@@ -993,6 +1020,7 @@ runs:
             "" \
             "Device: $variant_name ($variant_codename / $variant_model)" \
             "Kernel: $kernel_version" \
+            "KernelSU Next patchset: $KSU_PATCHSET" \
             "Optimization: $OPTIMIZE_LEVEL" \
             "TCP congestion control: bbr3" \
             "Flashable package: $variant_ak3_zip" \

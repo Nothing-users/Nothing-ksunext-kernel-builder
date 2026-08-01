@@ -34,6 +34,7 @@
 | `kernel_ref` | из манифеста | Ветка, тег или commit NothingOSS |
 | `ksun_ref` | `dev` | `dev`, `stable` или `custom` |
 | `ksun_custom_ref` | пусто | Branch, tag или commit KSUN для режима `custom` |
+| `ksun_patchset` | `dev` | Набор compatibility-патчей `dev` или `stable` для custom ref |
 | `susfs_ref` | автоматически | Ветка, тег или commit SUSFS |
 | `optimize_level` | `O2` | Оптимизация `O1`, `O2` или `O3` |
 | `create_release` | включено | Создать Release или developer prerelease |

@@ -31,6 +31,14 @@ on:
         required: false
         default: ""
         type: string
+      ksun_patchset:
+        description: Compatibility patches for custom KernelSU Next ref
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - stable
       susfs_ref:
         description: SUSFS branch or commit, empty selects android14-6.1 automatically
         required: false
@@ -118,6 +126,7 @@ jobs:
           manifest: ${{ matrix.manifest }}
           kernel_ref: ${{ inputs.kernel_ref }}
           ksun_ref: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_custom_ref || inputs.ksun_ref }}
+          ksun_patchset: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
           developer_mode: ${{ inputs.developer_mode }}
@@ -167,6 +176,7 @@ jobs:
           DEVICE: ${{ inputs.device }}
           KERNEL_REF: ${{ inputs.kernel_ref }}
           KSUN_REF: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_custom_ref || inputs.ksun_ref }}
+          KSUN_PATCHSET: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
           SUSFS_REF: ${{ inputs.susfs_ref }}
           OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
           DEVELOPER_MODE: ${{ inputs.developer_mode }}
@@ -185,6 +195,7 @@ jobs:
             "Device selection: $DEVICE" \
             "NothingOSS ref: $effective_kernel_ref" \
             "KernelSU Next ref: $KSUN_REF" \
+            "KernelSU Next patchset: $KSUN_PATCHSET" \
             "SUSFS ref: $effective_susfs_ref" \
             "Optimization: $OPTIMIZE_LEVEL" \
             "TCP congestion control: bbr3" \
