@@ -37,7 +37,7 @@ Open `Actions → Nothing Kernel Builder → Run workflow`.
 | `ksun_patchset` | `dev` | Compatibility patch set (`dev` or `stable`) for custom refs |
 | `susfs_ref` | auto | SUSFS branch, tag or commit |
 | `optimize_level` | `O2` | Compiler optimization: `O1`, `O2` or `O3` |
-| `extra_patches` | enabled | Apply optional patches (BBRv3, Nothing kernel fixups); KSUN + SUSFS are always applied |
+| `extra_patches` | enabled | Apply the optional BBRv3 backport; KSUN, SUSFS and Nothing kernel fixups are always applied |
 | `create_release` | enabled | Publish a GitHub Release or developer prerelease |
 | `developer_mode` | disabled | Keep patch logs, diffs, `.rej` and `.orig` files |
 

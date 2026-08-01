@@ -54,7 +54,7 @@ on:
           - O2
           - O3
       extra_patches:
-        description: Apply optional patches (BBRv3, Nothing kernel fixups). KSUN and SUSFS are always applied.
+        description: Apply optional BBRv3 patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
         required: true
         default: true
         type: boolean

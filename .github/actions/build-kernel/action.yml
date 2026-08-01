@@ -26,7 +26,7 @@ inputs:
     required: false
     default: O2
   extra_patches:
-    description: Apply optional patches (BBRv3, Nothing kernel fixups). KSUN and SUSFS are always applied.
+    description: Apply optional BBRv3 patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
     required: false
     default: "true"
   localversion:
@@ -498,14 +498,12 @@ runs:
           printf 'SUSFS_VERSION=%s\n' "$susfs_version"
         } >> "$GITHUB_ENV"
 
-        if [[ "$EXTRA_PATCHES" == true ]]; then
-          if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
-            sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
-          fi
+        if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
+          sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
+        fi
 
-          if (( sublevel >= 157 )); then
-            sed -i '/^#include <trace\/hooks\/blk.h>$/d' "$KERNEL_DIR/fs/namespace.c"
-          fi
+        if (( sublevel >= 157 )); then
+          sed -i '/^#include <trace\/hooks\/blk.h>$/d' "$KERNEL_DIR/fs/namespace.c"
         fi
 
         cp -a "$SUSFS_DIR/kernel_patches/fs/." "$KERNEL_DIR/fs/"
