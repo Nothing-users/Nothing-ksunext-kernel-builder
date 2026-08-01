@@ -17,7 +17,7 @@ An automated GitHub Actions builder for Nothing kernels with KernelSU Next, SUSF
 ## What's included
 
 - NothingOSS 6.1 kernel source
-- KernelSU Next (`dev`, `stable` or a custom ref)
+- KernelSU Next (`dev` or `stable`)
 - SUSFS v2.2.0
 - Android Clang `clang-r487747c`
 - Flashable AnyKernel3 packages
