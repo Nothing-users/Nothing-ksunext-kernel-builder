@@ -25,6 +25,10 @@ inputs:
     description: Compiler optimization level
     required: false
     default: O2
+  extra_patches:
+    description: Apply optional patches (BBRv3, Nothing kernel fixups). KSUN and SUSFS are always applied.
+    required: false
+    default: "true"
   localversion:
     description: Exact custom kernel LOCALVERSION suffix
     required: false
@@ -57,6 +61,7 @@ runs:
         KSUN_PATCHSET_INPUT: ${{ inputs.ksun_patchset }}
         SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
         OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
+        EXTRA_PATCHES_INPUT: ${{ inputs.extra_patches }}
         LOCALVERSION_INPUT: ${{ inputs.localversion }}
         DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
@@ -97,27 +102,6 @@ runs:
         }
 
         package_devices="$(jq -c '.devices' "$manifest")"
-        package_phone_3a=false
-        package_phone_3a_pro=false
-        package_phone_4a=false
-
-        while IFS= read -r package_device; do
-          case "$package_device" in
-            phone-3a)
-              package_phone_3a=true
-              ;;
-            phone-3a-pro)
-              package_phone_3a_pro=true
-              ;;
-            phone-4a)
-              package_phone_4a=true
-              ;;
-            *)
-              printf 'Unsupported package device: %s\n' "$package_device" >&2
-              exit 2
-              ;;
-          esac
-        done < <(jq -r '.[].device' <<< "$package_devices")
 
         device="$(read_json '.devices[0].device')"
         device_name="$(read_json '.devices[0].name')"
@@ -155,6 +139,15 @@ runs:
             ;;
         esac
 
+        case "$EXTRA_PATCHES_INPUT" in
+          true|false)
+            ;;
+          *)
+            printf 'Unsupported extra_patches value: %s\n' "$EXTRA_PATCHES_INPUT" >&2
+            exit 2
+            ;;
+        esac
+
         if [[ -n "$LOCALVERSION_INPUT" && ! "$LOCALVERSION_INPUT" =~ ^-[A-Za-z0-9._+-]+$ ]]; then
           printf 'Invalid localversion: %s (expected a suffix beginning with -)\n' "$LOCALVERSION_INPUT" >&2
           exit 2
@@ -183,9 +176,6 @@ runs:
         {
           printf 'MANIFEST_PATH=%s\n' "$manifest"
           printf 'PACKAGE_DEVICES=%s\n' "$package_devices"
-          printf 'PACKAGE_PHONE_3A=%s\n' "$package_phone_3a"
-          printf 'PACKAGE_PHONE_3A_PRO=%s\n' "$package_phone_3a_pro"
-          printf 'PACKAGE_PHONE_4A=%s\n' "$package_phone_4a"
           printf 'DEVICE=%s\n' "$device"
           printf 'DEVICE_NAME=%s\n' "$device_name"
           printf 'CODENAME=%s\n' "$codename"
@@ -211,6 +201,7 @@ runs:
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
+          printf 'EXTRA_PATCHES=%s\n' "$EXTRA_PATCHES_INPUT"
           printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
           printf 'KBUILD_BUILD_USER=%s\n' "$build_user"
           printf 'KBUILD_BUILD_HOST=%s\n' "$build_host"
@@ -225,6 +216,7 @@ runs:
           printf 'ARTIFACT_ROOT=%s\n' "$artifact_root"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
           printf 'CONFIG_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/ksunext-susfs.config"
+          printf 'BBRV3_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/bbrv3.config"
           printf 'CCACHE_DIR=%s\n' "$RUNNER_TEMP/ccache"
         } >> "$GITHUB_ENV"
 
@@ -244,7 +236,7 @@ runs:
           echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
           echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
-          echo "| TCP congestion control | \`bbr3\` |"
+          echo "| Extra patches | \`$EXTRA_PATCHES_INPUT\` |"
           echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
           echo "| Build identity | \`$build_user@$build_host\` |"
           echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
@@ -506,12 +498,14 @@ runs:
           printf 'SUSFS_VERSION=%s\n' "$susfs_version"
         } >> "$GITHUB_ENV"
 
-        if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
-          sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
-        fi
+        if [[ "$EXTRA_PATCHES" == true ]]; then
+          if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
+            sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
+          fi
 
-        if (( sublevel >= 157 )); then
-          sed -i '/^#include <trace\/hooks\/blk.h>$/d' "$KERNEL_DIR/fs/namespace.c"
+          if (( sublevel >= 157 )); then
+            sed -i '/^#include <trace\/hooks\/blk.h>$/d' "$KERNEL_DIR/fs/namespace.c"
+          fi
         fi
 
         cp -a "$SUSFS_DIR/kernel_patches/fs/." "$KERNEL_DIR/fs/"
@@ -534,45 +528,47 @@ runs:
           exit "$kernel_patch_status"
         fi
 
-        bbrv3_dir="$PATCHES_DIR/common/bbrv3"
-        bbrv3_sysctl_add="$bbrv3_dir/sysctl_add_proc_dou8vec_minmax.patch"
-        bbrv3_sysctl_fix="$bbrv3_dir/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
-        bbrv3_main="$bbrv3_dir/0001-net-tcp-backport-BBRv3-to-android14-6.1.patch"
+        if [[ "$EXTRA_PATCHES" == true ]]; then
+          bbrv3_dir="$PATCHES_DIR/common/bbrv3"
+          bbrv3_sysctl_add="$bbrv3_dir/sysctl_add_proc_dou8vec_minmax.patch"
+          bbrv3_sysctl_fix="$bbrv3_dir/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
+          bbrv3_main="$bbrv3_dir/0001-net-tcp-backport-BBRv3-to-android14-6.1.patch"
 
-        for bbrv3_patch in "$bbrv3_sysctl_add" "$bbrv3_sysctl_fix" "$bbrv3_main"; do
-          if [[ ! -f "$bbrv3_patch" ]]; then
-            printf 'Missing BBRv3 patch: %s\n' "$bbrv3_patch" >&2
-            exit 1
+          for bbrv3_patch in "$bbrv3_sysctl_add" "$bbrv3_sysctl_fix" "$bbrv3_main"; do
+            if [[ ! -f "$bbrv3_patch" ]]; then
+              printf 'Missing BBRv3 patch: %s\n' "$bbrv3_patch" >&2
+              exit 1
+            fi
+          done
+
+          if ! grep -q '^int proc_dou8vec_minmax(' "$KERNEL_DIR/kernel/sysctl.c"; then
+            patch \
+              --directory="$KERNEL_DIR" \
+              --batch \
+              --forward \
+              -p1 \
+              < "$bbrv3_sysctl_add" \
+              2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_add").log"
           fi
-        done
 
-        if ! grep -q '^int proc_dou8vec_minmax(' "$KERNEL_DIR/kernel/sysctl.c"; then
+          if ! grep -qF 'val = READ_ONCE(*data);' "$KERNEL_DIR/kernel/sysctl.c"; then
+            patch \
+              --directory="$KERNEL_DIR" \
+              --batch \
+              --forward \
+              -p1 \
+              < "$bbrv3_sysctl_fix" \
+              2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_fix").log"
+          fi
+
           patch \
             --directory="$KERNEL_DIR" \
             --batch \
             --forward \
             -p1 \
-            < "$bbrv3_sysctl_add" \
-            2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_add").log"
+            < "$bbrv3_main" \
+            2>&1 | tee "$patch_logs/$(basename "$bbrv3_main").log"
         fi
-
-        if ! grep -qF 'val = READ_ONCE(*data);' "$KERNEL_DIR/kernel/sysctl.c"; then
-          patch \
-            --directory="$KERNEL_DIR" \
-            --batch \
-            --forward \
-            -p1 \
-            < "$bbrv3_sysctl_fix" \
-            2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_fix").log"
-        fi
-
-        patch \
-          --directory="$KERNEL_DIR" \
-          --batch \
-          --forward \
-          -p1 \
-          < "$bbrv3_main" \
-          2>&1 | tee "$patch_logs/$(basename "$bbrv3_main").log"
 
     - name: Configure kernel
       shell: bash
@@ -614,21 +610,28 @@ runs:
           HOSTCC="ccache clang" \
           "$KERNEL_DEFCONFIG"
 
-        while IFS='=' read -r option value; do
-          [[ -z "$option" ]] && continue
-          symbol="${option#CONFIG_}"
-          case "$value" in
-            y)
-              "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -e "$symbol"
-              ;;
-            n)
-              "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -d "$symbol"
-              ;;
-            *)
-              "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" --set-val "$symbol" "$value"
-              ;;
-          esac
-        done < "$CONFIG_FRAGMENT"
+        fragments=("$CONFIG_FRAGMENT")
+        if [[ "$EXTRA_PATCHES" == true ]]; then
+          fragments+=("$BBRV3_FRAGMENT")
+        fi
+
+        for fragment in "${fragments[@]}"; do
+          while IFS='=' read -r option value; do
+            [[ -z "$option" ]] && continue
+            symbol="${option#CONFIG_}"
+            case "$value" in
+              y)
+                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -e "$symbol"
+                ;;
+              n)
+                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -d "$symbol"
+                ;;
+              *)
+                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" --set-val "$symbol" "$value"
+                ;;
+            esac
+          done < "$fragment"
+        done
 
         # Store the requested suffix in the kernel config so setlocalversion
         # keeps it while the SCM/git suffix is disabled below.
@@ -665,22 +668,24 @@ runs:
           HOSTCC="ccache clang" \
           olddefconfig
 
-        while IFS= read -r expected; do
-          [[ -z "$expected" ]] && continue
-          option="${expected%%=*}"
-          value="${expected#*=}"
+        for fragment in "${fragments[@]}"; do
+          while IFS= read -r expected; do
+            [[ -z "$expected" ]] && continue
+            option="${expected%%=*}"
+            value="${expected#*=}"
 
-          if [[ "$value" == n ]]; then
-            actual="# $option is not set"
-          else
-            actual="$expected"
-          fi
+            if [[ "$value" == n ]]; then
+              actual="# $option is not set"
+            else
+              actual="$expected"
+            fi
 
-          if ! grep -qxF "$actual" "$OUT_DIR/.config"; then
-            printf 'Required config was not enabled: %s\n' "$expected" >&2
-            exit 1
-          fi
-        done < "$CONFIG_FRAGMENT"
+            if ! grep -qxF "$actual" "$OUT_DIR/.config"; then
+              printf 'Required config was not enabled: %s\n' "$expected" >&2
+              exit 1
+            fi
+          done < "$fragment"
+        done
 
     - name: Build kernel Image
       id: build
@@ -859,6 +864,12 @@ runs:
         kernel_version="$KERNEL_RELEASE"
         artifact_name="$DEVICE-build-files"
 
+        if [[ "$EXTRA_PATCHES" == true ]]; then
+          tcp_cc=bbr3
+        else
+          tcp_cc=cubic
+        fi
+
         printf '%s\n' \
           "Nothing Kernel Builder" \
           "" \
@@ -866,7 +877,8 @@ runs:
           "Kernel: $kernel_version" \
           "KernelSU Next patchset: $KSU_PATCHSET" \
           "Optimization: $OPTIMIZE_LEVEL" \
-          "TCP congestion control: bbr3" \
+          "Extra patches: $EXTRA_PATCHES" \
+          "TCP congestion control: $tcp_cc" \
           "Flashable package: $AK3_ZIP" \
           "" \
           "Install the ZIP with a compatible kernel flasher or custom recovery." \
@@ -905,7 +917,8 @@ runs:
           --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
           --arg optimize_level "$OPTIMIZE_LEVEL" \
-          --arg tcp_congestion_control bbr3 \
+          --arg extra_patches "$EXTRA_PATCHES" \
+          --arg tcp_congestion_control "$tcp_cc" \
           --arg localversion "$LOCALVERSION" \
           --arg build_user "$KBUILD_BUILD_USER" \
           --arg build_host "$KBUILD_BUILD_HOST" \
@@ -950,6 +963,7 @@ runs:
             },
             toolchain: $toolchain,
             optimize_level: $optimize_level,
+            extra_patches: ($extra_patches == "true"),
             tcp_congestion_control: $tcp_congestion_control,
             localversion: $localversion,
             build_identity: {
@@ -983,167 +997,21 @@ runs:
           echo "| Build identity | \`$KBUILD_BUILD_USER@$KBUILD_BUILD_HOST\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Package additional device artifacts
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        kernel_version="$KERNEL_RELEASE"
-
-        while IFS= read -r variant; do
-          variant_device="$(jq -er '.device' <<< "$variant")"
-
-          if [[ "$variant_device" == "$DEVICE" ]]; then
-            continue
-          fi
-
-          variant_name="$(jq -er '.name' <<< "$variant")"
-          variant_codename="$CODENAME"
-          variant_model="$(jq -er '.model' <<< "$variant")"
-          variant_artifact_dir="$ARTIFACT_ROOT/$variant_device"
-          variant_ak3_dir="$BUILD_ROOT/AnyKernel3-$variant_device"
-          variant_ak3_zip="Nothing-$variant_device-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
-          mkdir -p "$variant_artifact_dir"
-
-          cp -a "$AK3_DIR" "$variant_ak3_dir"
-          cp "$OUT_DIR/$KERNEL_IMAGE" "$variant_ak3_dir/Image"
-
-          kernel_string="Nothing $variant_name KernelSU Next + SUSFS"
-          sed -i \
-            -e "s|@KERNEL_STRING@|$kernel_string|g" \
-            -e "s|@DEVICE_CODENAME@|$variant_codename|g" \
-            "$variant_ak3_dir/anykernel.sh"
-
-          if grep -qE '@[A-Z_]+@' "$variant_ak3_dir/anykernel.sh"; then
-            printf 'Unresolved AnyKernel3 template placeholder for %s\n' "$variant_device" >&2
-            exit 1
-          fi
-
-          sh -n "$variant_ak3_dir/anykernel.sh"
-          grep -qxF "device.name1=$variant_codename" "$variant_ak3_dir/anykernel.sh"
-
-          (
-            cd "$variant_ak3_dir"
-            zip -r9 "$variant_artifact_dir/$variant_ak3_zip" . \
-              -x '.gitignore' \
-              -x 'README.md' \
-              -x '*placeholder'
-          )
-
-          cp "$ARTIFACT_DIR/Image" "$variant_artifact_dir/Image"
-          cp "$ARTIFACT_DIR/kernel.config" "$variant_artifact_dir/kernel.config"
-          cp "$ARTIFACT_DIR/build.log" "$variant_artifact_dir/build.log"
-
-          if [[ -f "$ARTIFACT_DIR/System.map" ]]; then
-            cp "$ARTIFACT_DIR/System.map" "$variant_artifact_dir/System.map"
-          fi
-
-          image_sha256="$(sha256sum "$variant_artifact_dir/Image" | awk '{print $1}')"
-          ak3_sha256="$(sha256sum "$variant_artifact_dir/$variant_ak3_zip" | awk '{print $1}')"
-
-          printf '%s\n' \
-            "Nothing Kernel Builder" \
-            "" \
-            "Device: $variant_name ($variant_codename / $variant_model)" \
-            "Kernel: $kernel_version" \
-            "KernelSU Next patchset: $KSU_PATCHSET" \
-            "Optimization: $OPTIMIZE_LEVEL" \
-            "TCP congestion control: bbr3" \
-            "Flashable package: $variant_ak3_zip" \
-            "" \
-            "Install the ZIP with a compatible kernel flasher or custom recovery." \
-            "The bootloader must be unlocked. Back up the original boot image first." \
-            "Do not flash the raw Image file with fastboot." \
-            "This package has not yet been boot-tested on a physical device." \
-            "If the device does not boot, restore the original boot image." \
-            "" \
-            "Image SHA256: $image_sha256" \
-            "AnyKernel3 SHA256: $ak3_sha256" \
-            > "$variant_artifact_dir/README.txt"
-
-          jq \
-            --arg device "$variant_device" \
-            --arg name "$variant_name" \
-            --arg codename "$variant_codename" \
-            --arg model "$variant_model" \
-            --arg zip "$variant_ak3_zip" \
-            --arg sha256 "$ak3_sha256" \
-            '
-              .device = $device |
-              .name = $name |
-              .codename = $codename |
-              .model = $model |
-              .anykernel3.zip = $zip |
-              .anykernel3.sha256 = $sha256
-            ' "$ARTIFACT_DIR/build.json" > "$variant_artifact_dir/build.json"
-
-          {
-            echo ""
-            echo "### $variant_name package"
-            echo ""
-            echo "| Field | Value |"
-            echo "|---|---|"
-            echo "| AnyKernel3 | \`$variant_ak3_zip\` |"
-            echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
-        done < <(jq -c '.[]' <<< "$PACKAGE_DEVICES")
-
-    - name: Upload Phone 3a AnyKernel3
-      if: ${{ env.PACKAGE_PHONE_3A == 'true' }}
+    - name: Upload AnyKernel3
       uses: actions/upload-artifact@v4
       with:
-        name: phone-3a-anykernel3
-        path: artifacts/phone-3a/*.zip
+        name: ${{ env.DEVICE }}-anykernel3
+        path: artifacts/${{ env.DEVICE }}/*.zip
         if-no-files-found: error
         compression-level: 0
 
-    - name: Upload Phone 3a build files
-      if: ${{ env.PACKAGE_PHONE_3A == 'true' }}
+    - name: Upload build files
       uses: actions/upload-artifact@v4
       with:
-        name: phone-3a-build-files
+        name: ${{ env.DEVICE }}-build-files
         path: |
-          artifacts/phone-3a
-          !artifacts/phone-3a/*.zip
-        if-no-files-found: error
-        compression-level: 6
-
-    - name: Upload Phone 3a Pro AnyKernel3
-      if: ${{ env.PACKAGE_PHONE_3A_PRO == 'true' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: phone-3a-pro-anykernel3
-        path: artifacts/phone-3a-pro/*.zip
-        if-no-files-found: error
-        compression-level: 0
-
-    - name: Upload Phone 3a Pro build files
-      if: ${{ env.PACKAGE_PHONE_3A_PRO == 'true' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: phone-3a-pro-build-files
-        path: |
-          artifacts/phone-3a-pro
-          !artifacts/phone-3a-pro/*.zip
-        if-no-files-found: error
-        compression-level: 6
-
-    - name: Upload Phone 4a AnyKernel3
-      if: ${{ env.PACKAGE_PHONE_4A == 'true' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: phone-4a-anykernel3
-        path: artifacts/phone-4a/*.zip
-        if-no-files-found: error
-        compression-level: 0
-
-    - name: Upload Phone 4a build files
-      if: ${{ env.PACKAGE_PHONE_4A == 'true' }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: phone-4a-build-files
-        path: |
-          artifacts/phone-4a
-          !artifacts/phone-4a/*.zip
+          artifacts/${{ env.DEVICE }}
+          !artifacts/${{ env.DEVICE }}/*.zip
         if-no-files-found: error
         compression-level: 6
 
