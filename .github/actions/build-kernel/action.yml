@@ -418,6 +418,13 @@ runs:
           exit 1
         fi
 
+        sed -i 's/"dtbo",/"dtbo", "system",/' "$bbg_dir/baseband_guard.h"
+
+        if ! grep -q '"dtbo", "system",' "$bbg_dir/baseband_guard.h"; then
+          printf 'Could not add system to Baseband Guard allowlist\n' >&2
+          exit 1
+        fi
+
         ln -s ../Baseband-guard "$KERNEL_DIR/security/baseband-guard"
 
         if ! grep -q 'CONFIG_BBG.*baseband-guard/' "$KERNEL_DIR/security/Makefile"; then
