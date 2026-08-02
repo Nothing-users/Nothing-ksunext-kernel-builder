@@ -21,7 +21,7 @@
 - [SUSFS v2.2.0](https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1)
 - [Android Clang `clang-r487747c`](https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/main-kernel-build-2023/clang-r487747c/)
 - [Прошиваемые пакеты AnyKernel3](https://github.com/weekanya/AnyKernel3)
-- Baseband Guard, BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
+- [Baseband Guard](https://github.com/vc-teahouse/Baseband-guard), [BBRv3](https://github.com/WildKernels/kernel_patches/tree/24865a0bc50dfb65b04153cc9ad2879a9c26cc7e/common/bbrv3), FQ, CAKE, TTL Target, MGLRU, ZSTD
 
 ## Патчи
 
