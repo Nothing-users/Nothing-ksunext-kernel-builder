@@ -5,7 +5,7 @@ English | [Русский](docs/README_RU.md)
 # Nothing Kernel Builder
 
 > [!WARNING]
-> This project is experimental and has not been tested on physical devices yet. Use it at your own risk and keep a backup of your original boot image.
+> Nothing Phone (3a) and (3a) Pro builds currently do not work: the published NothingOSS source uses the older 6.1.134 kernel, while devices run 6.1.157. This project is experimental; use it at your own risk and keep a backup of your original boot image.
 
 An automated GitHub Actions builder for Nothing kernels with KernelSU Next, SUSFS and custom patch.
 
