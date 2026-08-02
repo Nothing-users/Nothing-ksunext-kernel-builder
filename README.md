@@ -29,7 +29,6 @@ An automated GitHub Actions builder for Nothing kernels with KernelSU Next, SUSF
 - Separate KernelSU Next compatibility fixes for `dev` and `stable`
 - Hook mode and KSU toolkit compatibility patches
 - BBRv3 backport for Nothing kernel
-- Baseband Guard from [vc-teahouse](https://github.com/vc-teahouse/Baseband-guard), with `boot`, `recovery` and `system` allowed
 - Small compatibility fixes for Nothing's modified 6.1 kernel
 
 ## Output
