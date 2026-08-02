@@ -5,7 +5,7 @@ English | [Русский](docs/README_RU.md)
 # Nothing Stock Kernel Builder
 
 > [!WARNING]
-> Builds are not tested on physical devices yet. Keep a backup of the original boot image before flashing.
+> Nothing Phone (3a) and (3a) Pro builds currently do not work: the published NothingOSS source uses the older 6.1.134 kernel, while devices run 6.1.157. Keep a backup of the original boot image before flashing.
 
 GitHub Actions builder for unmodified NothingOSS 6.1 kernels. This branch does not include KernelSU, SUSFS, Baseband Guard, BBRv3 or other custom patches.
 
