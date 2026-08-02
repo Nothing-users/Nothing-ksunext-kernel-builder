@@ -6,7 +6,6 @@
     "schema",
     "devices",
     "codename",
-    "soc",
     "android",
     "kernel",
     "toolchain",
@@ -49,9 +48,6 @@
     },
     "codename": {
       "type": "string"
-    },
-    "soc": {
-      "const": "sm7635"
     },
     "android": {
       "const": "android14-6.1"

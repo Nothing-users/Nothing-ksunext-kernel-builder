@@ -59,7 +59,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sm7635-${{ github.ref }}-${{ inputs.device }}
+  group: nothing-kernel-${{ github.ref }}-${{ inputs.device }}
   cancel-in-progress: false
 
 jobs:
@@ -76,10 +76,10 @@ jobs:
         run: |
           case "$DEVICE" in
             all)
-              matrix='{"include":[{"device":"asteroids","manifest":"manifests/sm7635/phone-3a-series.json"},{"device":"frogger","manifest":"manifests/sm7635/phone-4a.json"}]}'
+              matrix='{"include":[{"device":"asteroids","manifest":"manifests/devices/phone-3a-series.json"},{"device":"frogger","manifest":"manifests/devices/phone-4a.json"}]}'
               ;;
             phone-3a-series|phone-4a)
-              manifest="manifests/sm7635/$DEVICE.json"
+              manifest="manifests/devices/$DEVICE.json"
               codename="$(jq -er '.codename' "$manifest")"
               matrix="$(jq -cn --arg device "$codename" --arg manifest "$manifest" '{include:[{device:$device,manifest:$manifest}]}')"
               ;;

@@ -75,7 +75,6 @@ runs:
 
         jq -e '
           .schema == 1 and
-          .soc == "sm7635" and
           .android == "android14-6.1" and
           (.devices |
             type == "array" and
@@ -163,7 +162,7 @@ runs:
         esac
 
         codename="$(read_json '.codename')"
-        build_root="$RUNNER_TEMP/sm7635-$codename"
+        build_root="$RUNNER_TEMP/nothing-kernel-$codename"
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
         susfs_dir="$build_root/susfs4ksu"
@@ -180,7 +179,6 @@ runs:
           printf 'DEVICE_NAME=%s\n' "$device_name"
           printf 'CODENAME=%s\n' "$codename"
           printf 'MODEL=%s\n' "$model"
-          printf 'SOC=%s\n' "$(read_json '.soc')"
           printf 'ANDROID=%s\n' "$(read_json '.android')"
           printf 'KERNEL_REPOSITORY=%s\n' "$(read_json '.kernel.repository')"
           printf 'KERNEL_BRANCH=%s\n' "$kernel_branch"
@@ -264,10 +262,10 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/ccache
-        key: ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-
-          ccache-sm7635-${{ env.CODENAME }}-
+          ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-
+          ccache-nothing-kernel-${{ env.CODENAME }}-
 
     - name: Sync NothingOSS kernel source
       shell: bash
@@ -912,7 +910,6 @@ runs:
           --arg name "$DEVICE_NAME" \
           --arg codename "$CODENAME" \
           --arg model "$MODEL" \
-          --arg soc "$SOC" \
           --arg android "$ANDROID" \
           --arg kernel_repository "$KERNEL_REPOSITORY" \
           --arg kernel_ref "$KERNEL_REF" \
@@ -947,7 +944,6 @@ runs:
             name: $name,
             codename: $codename,
             model: $model,
-            soc: $soc,
             android: $android,
             kernel: {
               repository: $kernel_repository,
@@ -1040,7 +1036,7 @@ runs:
       run: |
         set -u
         diagnostic_device="${CODENAME:-${DEVICE:-$(basename "$MANIFEST_INPUT" .json)}}"
-        diagnostic_build_root="${BUILD_ROOT:-$RUNNER_TEMP/sm7635-diagnostics}"
+        diagnostic_build_root="${BUILD_ROOT:-$RUNNER_TEMP/nothing-kernel-diagnostics}"
         diagnostic_dir="$GITHUB_WORKSPACE/developer-diagnostics/$diagnostic_device"
         mkdir -p "$diagnostic_dir/rejects" "$diagnostic_dir/logs" "$diagnostic_dir/diffs"
 
@@ -1105,7 +1101,7 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: ${{ runner.temp }}/ccache
-        key: ccache-sm7635-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Show patch rejects
       if: failure()
