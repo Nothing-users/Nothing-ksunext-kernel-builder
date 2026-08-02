@@ -29,7 +29,6 @@
 - Отдельные исправления совместимости KernelSU Next для `dev` и `stable`
 - Патчи совместимости с режимом хуков и инструментарием KSU
 - Бэкпорт BBRv3 для ядра Nothing
-- Baseband Guard от [vc-teahouse](https://github.com/vc-teahouse/Baseband-guard), с разрешёнными `boot`, `recovery` и `system`
 - Небольшие исправления совместимости для ядра Nothing версии 6.1
 
 ## Результаты сборки
