@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Nothing Kernel Builder manifest",
+  "title": "Nothing Stock Kernel Builder manifest",
   "type": "object",
   "required": [
     "schema",
@@ -9,10 +9,6 @@
     "android",
     "kernel",
     "toolchain",
-    "kernelsu",
-    "susfs",
-    "compatibility_patches",
-    "baseband_guard",
     "anykernel3"
   ],
   "properties": {
@@ -22,6 +18,7 @@
     "devices": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -68,35 +65,6 @@
         "repository",
         "branch",
         "version"
-      ]
-    },
-    "kernelsu": {
-      "type": "object",
-      "required": [
-        "repository",
-        "branch"
-      ]
-    },
-    "susfs": {
-      "type": "object",
-      "required": [
-        "repository",
-        "branch",
-        "patch"
-      ]
-    },
-    "compatibility_patches": {
-      "type": "object",
-      "required": [
-        "repository",
-        "commit"
-      ]
-    },
-    "baseband_guard": {
-      "type": "object",
-      "required": [
-        "repository",
-        "commit"
       ]
     },
     "anykernel3": {

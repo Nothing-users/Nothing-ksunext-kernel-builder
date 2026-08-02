@@ -2,37 +2,26 @@
 
 ---
 
-# Nothing Kernel Builder
+# Nothing Stock Kernel Builder
 
 > [!WARNING]
-> Этот проект является экспериментальным и ещё не тестировался на физических устройствах. Используйте его на свой страх и риск и обязательно сохраните свою резервную копию оригинального boot.img .
+> Сборки пока не проверены на физических устройствах. Перед прошивкой сохраните оригинальный образ boot.
 
-Автоматизированная сборка ядер Nothing с KernelSU Next, SUSFS и пользовательским патчем с помощью GitHub Actions.
+GitHub Actions билдер неизменённого ядра NothingOSS 6.1. В этой ветке нет KernelSU, SUSFS, Baseband Guard, BBRv3 и других пользовательских патчей.
 
 ## Поддерживаемые устройства
 
 - Nothing Phone (3a) & (3a) Pro (`asteroids`, A059/A059P)
 - Nothing Phone (4a) (`frogger`, A069)
 
-## Что входит в сборку
+## Исходники сборки
 
-- [Исходный код ядра NothingOSS 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
-- [KernelSU Next](https://github.com/KernelSU-Next/KernelSU-Next) (`dev` или `stable`)
-- [SUSFS v2.2.0](https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android14-6.1)
+- [Ядро NothingOSS 6.1](https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635)
 - [Android Clang `clang-r487747c`](https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/main-kernel-build-2023/clang-r487747c/)
-- [Прошиваемые пакеты AnyKernel3](https://github.com/weekanya/AnyKernel3)
-- [Baseband Guard](https://github.com/vc-teahouse/Baseband-guard), [BBRv3](https://github.com/WildKernels/kernel_patches/tree/24865a0bc50dfb65b04153cc9ad2879a9c26cc7e/common/bbrv3), FQ, CAKE, TTL Target, MGLRU, ZSTD
+- [AnyKernel3](https://github.com/weekanya/AnyKernel3)
 
-## Патчи
+## Результаты
 
-- Официальные патчи интеграции SUSFS для KernelSU
-- Отдельные исправления совместимости KernelSU Next для `dev` и `stable`
-- Патчи совместимости с режимом хуков и инструментарием KSU
-- Бэкпорт BBRv3 для ядра Nothing
-- Небольшие исправления совместимости для ядра Nothing версии 6.1
-
-## Результаты сборки
-
-- `<device>-anykernel3` — прошиваемый архив `Nothing-<device>-KSUNext-SUSFS-<kernel>-<optimization>.zip`
-- `<device>-build-files` — `Image`, конфигурация, `System.map`, журналы и метаданные
-- `<target>-developer-diagnostics` — файлы `.rej` и `.orig`, журналы применения патчей и различия при включённом режиме разработчика
+- `<device>-stock-anykernel3` — прошиваемый ZIP со стоковым ядром
+- `<device>-stock-build-files` — `Image`, конфигурация, `System.map`, логи и метаданные
+- `<codename>-stock-developer-diagnostics` — диагностика ошибки при включённом developer mode

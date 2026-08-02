@@ -1,4 +1,4 @@
-name: Nothing Kernel Builder
+name: Nothing Stock Kernel Builder
 
 on:
   workflow_dispatch:
@@ -17,40 +17,13 @@ on:
         required: false
         default: ""
         type: string
-      ksun_ref:
-        description: KernelSU Next source
-        required: true
-        default: dev
-        type: choice
-        options:
-          - dev
-          - stable
-      susfs_ref:
-        description: SUSFS branch or commit, empty selects android14-6.1 automatically
-        required: false
-        default: ""
-        type: string
-      optimize_level:
-        description: Compiler optimization level
-        required: true
-        default: O2
-        type: choice
-        options:
-          - O1
-          - O2
-          - O3
-      custom_patches:
-        description: Apply optional custom patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
-        required: true
-        default: true
-        type: boolean
       create_release:
-        description: Create GitHub Release or developer prerelease
+        description: Create a GitHub Release
         required: true
         default: false
         type: boolean
       developer_mode:
-        description: Include patch rejects, diffs and logs
+        description: Upload diagnostics when the build fails
         required: true
         default: false
         type: boolean
@@ -59,7 +32,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nothing-kernel-${{ github.ref }}-${{ inputs.device }}
+  group: nothing-stock-${{ github.ref }}-${{ inputs.device }}
   cancel-in-progress: false
 
 jobs:
@@ -100,21 +73,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ${{ matrix.device }}
+      - name: Build ${{ matrix.device }} stock kernel
         uses: ./.github/actions/build-kernel
         with:
           manifest: ${{ matrix.manifest }}
           kernel_ref: ${{ inputs.kernel_ref }}
-          ksun_ref: ${{ inputs.ksun_ref }}
-          ksun_patchset: ${{ inputs.ksun_ref }}
-          susfs_ref: ${{ inputs.susfs_ref }}
-          optimize_level: ${{ inputs.optimize_level }}
-          custom_patches: ${{ inputs.custom_patches }}
           developer_mode: ${{ inputs.developer_mode }}
 
   release:
     needs: build
-    if: ${{ !cancelled() && inputs.create_release && (needs.build.result == 'success' || inputs.developer_mode) }}
+    if: ${{ !cancelled() && inputs.create_release && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -144,7 +112,7 @@ jobs:
           done
 
           if ! find release-packages -maxdepth 1 -type f -print -quit | grep -q .; then
-            echo "No release packages were created" >&2
+            printf 'No release packages were created\n' >&2
             exit 1
           fi
 
@@ -156,55 +124,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEVICE: ${{ inputs.device }}
           KERNEL_REF: ${{ inputs.kernel_ref }}
-          KSUN_REF: ${{ inputs.ksun_ref }}
-          KSUN_PATCHSET: ${{ inputs.ksun_ref }}
-          SUSFS_REF: ${{ inputs.susfs_ref }}
-          OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
-          CUSTOM_PATCHES: ${{ inputs.custom_patches }}
-          DEVELOPER_MODE: ${{ inputs.developer_mode }}
-          BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -Eeuo pipefail
-          tag="nothing-kernel-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          tag="nothing-stock-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           effective_kernel_ref="${KERNEL_REF:-manifest default}"
-          effective_susfs_ref="${SUSFS_REF:-gki-android14-6.1-dev}"
-
-          if [[ "$CUSTOM_PATCHES" == true ]]; then
-            tcp_cc=bbr3
-          else
-            tcp_cc=cubic
-          fi
-
           notes="$(printf '%s\n' \
-            'Nothing Kernel Builder' \
+            'Nothing Stock Kernel Builder' \
             '' \
-            "Build result: $BUILD_RESULT" \
-            "Developer mode: $DEVELOPER_MODE" \
             "Device selection: $DEVICE" \
             "NothingOSS ref: $effective_kernel_ref" \
-            "KernelSU Next ref: $KSUN_REF" \
-            "KernelSU Next patchset: $KSUN_PATCHSET" \
-            "SUSFS ref: $effective_susfs_ref" \
-            "Optimization: $OPTIMIZE_LEVEL" \
-            "Custom patches: $CUSTOM_PATCHES" \
-            "TCP congestion control: $tcp_cc" \
             '' \
+            'Built from unmodified NothingOSS kernel sources.' \
             'AnyKernel3 ZIP files are flashable packages.' \
-            'The packages have not yet been boot-tested on physical devices.' \
-            'Raw Image files inside the full archives must not be flashed directly with fastboot.')"
-
-          release_flags=()
-          release_title="Nothing Kernel Builder #$GITHUB_RUN_NUMBER"
-
-          if [[ "$DEVELOPER_MODE" == true ]]; then
-            release_flags+=(--prerelease)
-            release_title="Nothing Kernel Builder dev #$GITHUB_RUN_NUMBER"
-          fi
+            'The bootloader must be unlocked.')"
 
           gh release create \
             "$tag" \
             release-packages/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$release_title" \
-            --notes "$notes" \
-            "${release_flags[@]}"
+            --title "Nothing Stock Kernel #$GITHUB_RUN_NUMBER" \
+            --notes "$notes"

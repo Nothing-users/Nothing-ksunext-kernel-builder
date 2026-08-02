@@ -1,5 +1,5 @@
-name: Nothing Kernel Builder
-description: Build Nothing kernels with KernelSU Next and SUSFS
+name: Nothing Stock Kernel Builder
+description: Build an unmodified NothingOSS kernel and package it with AnyKernel3
 
 inputs:
   manifest:
@@ -9,32 +9,8 @@ inputs:
     description: Optional NothingOSS branch, tag or commit override
     required: false
     default: ""
-  ksun_ref:
-    description: KernelSU Next branch, tag or commit
-    required: false
-    default: dev
-  ksun_patchset:
-    description: KernelSU Next compatibility patchset
-    required: false
-    default: ""
-  susfs_ref:
-    description: Optional SUSFS branch or commit override
-    required: false
-    default: ""
-  optimize_level:
-    description: Compiler optimization level
-    required: false
-    default: O2
-  custom_patches:
-    description: Apply optional custom patches. KSUN, SUSFS and Nothing kernel fixups are always applied.
-    required: false
-    default: "true"
-  localversion:
-    description: Exact custom kernel LOCALVERSION suffix
-    required: false
-    default: "-nothing-users"
   developer_mode:
-    description: Upload patch rejects and developer diagnostics
+    description: Upload diagnostics when the build fails
     required: false
     default: "false"
 
@@ -57,12 +33,6 @@ runs:
       env:
         MANIFEST_INPUT: ${{ inputs.manifest }}
         KERNEL_REF_INPUT: ${{ inputs.kernel_ref }}
-        KSUN_REF_INPUT: ${{ inputs.ksun_ref }}
-        KSUN_PATCHSET_INPUT: ${{ inputs.ksun_patchset }}
-        SUSFS_REF_INPUT: ${{ inputs.susfs_ref }}
-        OPTIMIZE_LEVEL_INPUT: ${{ inputs.optimize_level }}
-        CUSTOM_PATCHES_INPUT: ${{ inputs.custom_patches }}
-        LOCALVERSION_INPUT: ${{ inputs.localversion }}
         DEVELOPER_MODE_INPUT: ${{ inputs.developer_mode }}
       run: |
         set -Eeuo pipefail
@@ -76,83 +46,21 @@ runs:
         jq -e '
           .schema == 1 and
           .android == "android14-6.1" and
-          (.devices |
-            type == "array" and
-            length > 0 and
-            all(.[];
-              (.device | type == "string" and test("^[a-z0-9-]+$")) and
-              (.name | type == "string" and length > 0) and
-              (.model | type == "string" and length > 0)
-            ) and
-            ((map(.device) | unique | length) == length)
-          ) and
+          (.devices | type == "array" and length == 1) and
+          (.devices[0].device | type == "string" and test("^[a-z0-9-]+$")) and
+          (.devices[0].name | type == "string" and length > 0) and
+          (.devices[0].model | type == "string" and length > 0) and
+          (.codename | type == "string" and test("^[a-z0-9-]+$")) and
           (.kernel.repository | test("^https://")) and
+          (.kernel.branch | type == "string" and length > 0) and
+          (.kernel.defconfig | type == "string" and length > 0) and
+          (.kernel.image | type == "string" and length > 0) and
           (.toolchain.repository | test("^https://")) and
-          (.kernelsu.repository | test("^https://")) and
-          (.susfs.repository | test("^https://")) and
-          (.compatibility_patches.repository | test("^https://")) and
-          (.compatibility_patches.commit | test("^[0-9a-f]{40}$")) and
-          (.baseband_guard.repository | test("^https://")) and
-          (.baseband_guard.commit | test("^[0-9a-f]{40}$")) and
+          (.toolchain.branch | type == "string" and length > 0) and
+          (.toolchain.version | type == "string" and length > 0) and
           (.anykernel3.repository | test("^https://")) and
           (.anykernel3.commit | test("^[0-9a-f]{40}$"))
         ' "$manifest" >/dev/null
-
-        read_json() {
-          jq -er "$1" "$manifest"
-        }
-
-        package_devices="$(jq -c '.devices' "$manifest")"
-
-        device="$(read_json '.devices[0].device')"
-        device_name="$(read_json '.devices[0].name')"
-        model="$(read_json '.devices[0].model')"
-        kernel_branch="$(read_json '.kernel.branch')"
-        kernel_ref="${KERNEL_REF_INPUT:-$kernel_branch}"
-        ksun_ref="${KSUN_REF_INPUT:-$(read_json '.kernelsu.branch')}"
-        susfs_ref="${SUSFS_REF_INPUT:-$(read_json '.susfs.branch')}"
-        build_user=wee
-        build_host=mrvoki
-
-        if [[ -n "$KSUN_PATCHSET_INPUT" ]]; then
-          ksun_patchset="$KSUN_PATCHSET_INPUT"
-        elif [[ "$ksun_ref" == stable ]]; then
-          ksun_patchset=stable
-        else
-          ksun_patchset=dev
-        fi
-
-        case "$ksun_patchset" in
-          dev|stable)
-            ;;
-          *)
-            printf 'Unsupported KernelSU Next compatibility patchset: %s\n' "$ksun_patchset" >&2
-            exit 2
-            ;;
-        esac
-
-        case "$OPTIMIZE_LEVEL_INPUT" in
-          O1|O2|O3)
-            ;;
-          *)
-            printf 'Unsupported optimization level: %s\n' "$OPTIMIZE_LEVEL_INPUT" >&2
-            exit 2
-            ;;
-        esac
-
-        case "$CUSTOM_PATCHES_INPUT" in
-          true|false)
-            ;;
-          *)
-            printf 'Unsupported custom_patches value: %s\n' "$CUSTOM_PATCHES_INPUT" >&2
-            exit 2
-            ;;
-        esac
-
-        if [[ -n "$LOCALVERSION_INPUT" && ! "$LOCALVERSION_INPUT" =~ ^-[A-Za-z0-9._+-]+$ ]]; then
-          printf 'Invalid localversion: %s (expected a suffix beginning with -)\n' "$LOCALVERSION_INPUT" >&2
-          exit 2
-        fi
 
         case "$DEVELOPER_MODE_INPUT" in
           true|false)
@@ -163,20 +71,25 @@ runs:
             ;;
         esac
 
+        read_json() {
+          jq -er "$1" "$manifest"
+        }
+
+        device="$(read_json '.devices[0].device')"
+        device_name="$(read_json '.devices[0].name')"
+        model="$(read_json '.devices[0].model')"
         codename="$(read_json '.codename')"
-        build_root="$RUNNER_TEMP/nothing-kernel-$codename"
+        kernel_branch="$(read_json '.kernel.branch')"
+        kernel_ref="${KERNEL_REF_INPUT:-$kernel_branch}"
+        build_root="$RUNNER_TEMP/nothing-stock-$codename"
         kernel_dir="$build_root/kernel"
         toolchain_dir="$build_root/toolchain"
-        susfs_dir="$build_root/susfs4ksu"
-        patches_dir="$build_root/kernel-patches"
         ak3_dir="$build_root/AnyKernel3"
         out_dir="$build_root/out"
-        artifact_root="$GITHUB_WORKSPACE/artifacts"
-        artifact_dir="$artifact_root/$device"
+        artifact_dir="$GITHUB_WORKSPACE/artifacts/$device"
 
         {
           printf 'MANIFEST_PATH=%s\n' "$manifest"
-          printf 'PACKAGE_DEVICES=%s\n' "$package_devices"
           printf 'DEVICE=%s\n' "$device"
           printf 'DEVICE_NAME=%s\n' "$device_name"
           printf 'CODENAME=%s\n' "$codename"
@@ -190,67 +103,36 @@ runs:
           printf 'TOOLCHAIN_REPOSITORY=%s\n' "$(read_json '.toolchain.repository')"
           printf 'TOOLCHAIN_BRANCH=%s\n' "$(read_json '.toolchain.branch')"
           printf 'TOOLCHAIN_VERSION=%s\n' "$(read_json '.toolchain.version')"
-          printf 'KSU_REPOSITORY=%s\n' "$(read_json '.kernelsu.repository')"
-          printf 'KSU_REF=%s\n' "$ksun_ref"
-          printf 'KSU_PATCHSET=%s\n' "$ksun_patchset"
-          printf 'SUSFS_REPOSITORY=%s\n' "$(read_json '.susfs.repository')"
-          printf 'SUSFS_REF=%s\n' "$susfs_ref"
-          printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
-          printf 'PATCHES_REPOSITORY=%s\n' "$(read_json '.compatibility_patches.repository')"
-          printf 'PATCHES_COMMIT=%s\n' "$(read_json '.compatibility_patches.commit')"
-          printf 'BBG_REPOSITORY=%s\n' "$(read_json '.baseband_guard.repository')"
-          printf 'BBG_COMMIT=%s\n' "$(read_json '.baseband_guard.commit')"
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
-          printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
-          printf 'CUSTOM_PATCHES=%s\n' "$CUSTOM_PATCHES_INPUT"
-          printf 'LOCALVERSION=%s\n' "$LOCALVERSION_INPUT"
-          printf 'KBUILD_BUILD_USER=%s\n' "$build_user"
-          printf 'KBUILD_BUILD_HOST=%s\n' "$build_host"
           printf 'DEVELOPER_MODE=%s\n' "$DEVELOPER_MODE_INPUT"
           printf 'BUILD_ROOT=%s\n' "$build_root"
           printf 'KERNEL_DIR=%s\n' "$kernel_dir"
           printf 'TOOLCHAIN_DIR=%s\n' "$toolchain_dir"
-          printf 'SUSFS_DIR=%s\n' "$susfs_dir"
-          printf 'PATCHES_DIR=%s\n' "$patches_dir"
           printf 'AK3_DIR=%s\n' "$ak3_dir"
           printf 'OUT_DIR=%s\n' "$out_dir"
-          printf 'ARTIFACT_ROOT=%s\n' "$artifact_root"
           printf 'ARTIFACT_DIR=%s\n' "$artifact_dir"
-          printf 'CONFIG_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/ksunext-susfs.config"
-          printf 'CUSTOM_PATCHES_FRAGMENT=%s\n' "$GITHUB_WORKSPACE/config/custom-patches.config"
-          printf 'CCACHE_DIR=%s\n' "$RUNNER_TEMP/ccache"
+          printf 'CCACHE_DIR=%s\n' "$RUNNER_TEMP/ccache-stock"
         } >> "$GITHUB_ENV"
 
-        rm -rf "$build_root" "$artifact_root"
-        mkdir -p "$build_root" "$artifact_dir" "$RUNNER_TEMP/ccache"
+        rm -rf "$build_root" "$GITHUB_WORKSPACE/artifacts"
+        mkdir -p "$build_root" "$artifact_dir" "$RUNNER_TEMP/ccache-stock"
 
         {
-          echo "### Nothing Kernel Builder"
+          echo "### Nothing Stock Kernel Builder"
           echo ""
           echo "| Field | Value |"
           echo "|---|---|"
-          echo "| Build target | $codename |"
-          echo "| Packages | $(jq -r 'map(.device) | join(", ")' <<< "$package_devices") |"
+          echo "| Device | $device_name ($codename) |"
           echo "| Kernel ref | \`$kernel_ref\` |"
-          echo "| KSUN ref | \`$ksun_ref\` |"
-          echo "| KSUN patchset | \`$ksun_patchset\` |"
-          echo "| SUSFS ref | \`$susfs_ref\` |"
           echo "| Toolchain | \`$(read_json '.toolchain.version')\` |"
-          echo "| Optimization | \`$OPTIMIZE_LEVEL_INPUT\` |"
-          echo "| Custom patches | \`$CUSTOM_PATCHES_INPUT\` |"
-          echo "| Local version | \`${LOCALVERSION_INPUT:-<none>}\` |"
-          echo "| Build identity | \`$build_user@$build_host\` |"
-          echo "| Developer mode | \`$DEVELOPER_MODE_INPUT\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Free disk space
       shell: bash
       run: |
         set -Eeuo pipefail
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
         df -h /
 
     - name: Install build dependencies
@@ -263,13 +145,13 @@ runs:
     - name: Restore rolling ccache
       id: ccache_restore
       continue-on-error: true
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/ccache-stock
+        key: ccache-stock-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-
-          ccache-nothing-kernel-${{ env.CODENAME }}-
+          ccache-stock-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-
+          ccache-stock-${{ env.CODENAME }}-
 
     - name: Sync NothingOSS kernel source
       shell: bash
@@ -311,7 +193,6 @@ runs:
         fi
 
         clang_bin="$TOOLCHAIN_DIR/$TOOLCHAIN_VERSION/bin"
-
         if [[ ! -x "$clang_bin/clang" ]]; then
           printf 'Toolchain not found: %s\n' "$TOOLCHAIN_VERSION" >&2
           exit 1
@@ -329,332 +210,7 @@ runs:
         path: ${{ env.TOOLCHAIN_DIR }}/${{ env.TOOLCHAIN_VERSION }}
         key: ${{ steps.clang_cache_restore.outputs.cache-primary-key }}
 
-    - name: Integrate KernelSU Next
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        git init "$KERNEL_DIR/KernelSU-Next"
-        git -C "$KERNEL_DIR/KernelSU-Next" remote add origin "$KSU_REPOSITORY"
-        git -C "$KERNEL_DIR/KernelSU-Next" -c protocol.version=2 fetch \
-          --filter=blob:none \
-          origin \
-          "$KSU_REF"
-        ksu_target="$(git -C "$KERNEL_DIR/KernelSU-Next" rev-parse FETCH_HEAD)"
-        git -C "$KERNEL_DIR/KernelSU-Next" checkout --detach "$ksu_target"
-
-        ln -s ../KernelSU-Next/kernel "$KERNEL_DIR/drivers/kernelsu"
-
-        if ! grep -q 'CONFIG_KSU.*kernelsu/' "$KERNEL_DIR/drivers/Makefile"; then
-          printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$KERNEL_DIR/drivers/Makefile"
-        fi
-
-        if ! grep -q 'drivers/kernelsu/Kconfig' "$KERNEL_DIR/drivers/Kconfig"; then
-          sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "$KERNEL_DIR/drivers/Kconfig"
-        fi
-
-        resolved_ksu_commit="$(git -C "$KERNEL_DIR/KernelSU-Next" rev-parse HEAD)"
-        printf 'RESOLVED_KSU_COMMIT=%s\n' "$resolved_ksu_commit" >> "$GITHUB_ENV"
-        printf 'KernelSU Next ref: %s\n' "$KSU_REF"
-        printf 'KernelSU Next commit: %s\n' "$resolved_ksu_commit"
-
-    - name: Sync SUSFS
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        git init "$SUSFS_DIR"
-        git -C "$SUSFS_DIR" remote add origin "$SUSFS_REPOSITORY"
-        git -C "$SUSFS_DIR" -c protocol.version=2 fetch \
-          --depth=1 \
-          --filter=blob:none \
-          origin \
-          "$SUSFS_REF"
-        git -C "$SUSFS_DIR" checkout --detach FETCH_HEAD
-        resolved_susfs_commit="$(git -C "$SUSFS_DIR" rev-parse HEAD)"
-        printf 'RESOLVED_SUSFS_COMMIT=%s\n' "$resolved_susfs_commit" >> "$GITHUB_ENV"
-        printf 'SUSFS ref: %s\n' "$SUSFS_REF"
-        printf 'SUSFS commit: %s\n' "$resolved_susfs_commit"
-
-    - name: Sync compatibility patches
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        git init "$PATCHES_DIR"
-        git -C "$PATCHES_DIR" remote add origin "$PATCHES_REPOSITORY"
-        git -C "$PATCHES_DIR" -c protocol.version=2 fetch \
-          --depth=1 \
-          --filter=blob:none \
-          origin \
-          "$PATCHES_COMMIT"
-        git -C "$PATCHES_DIR" checkout --detach FETCH_HEAD
-        resolved_patches_commit="$(git -C "$PATCHES_DIR" rev-parse HEAD)"
-
-        if [[ "$resolved_patches_commit" != "$PATCHES_COMMIT" ]]; then
-          printf 'Unexpected compatibility patches commit: %s\n' "$resolved_patches_commit" >&2
-          exit 1
-        fi
-
-    - name: Integrate Baseband Guard
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-
-        if [[ "$CUSTOM_PATCHES" != true ]]; then
-          printf 'RESOLVED_BBG_COMMIT=disabled\n' >> "$GITHUB_ENV"
-          exit 0
-        fi
-
-        bbg_dir="$KERNEL_DIR/Baseband-guard"
-        git init "$bbg_dir"
-        git -C "$bbg_dir" remote add origin "$BBG_REPOSITORY"
-        git -C "$bbg_dir" -c protocol.version=2 fetch \
-          --filter=blob:none \
-          origin \
-          "$BBG_COMMIT"
-        git -C "$bbg_dir" checkout --detach FETCH_HEAD
-        resolved_bbg_commit="$(git -C "$bbg_dir" rev-parse HEAD)"
-
-        if [[ "$resolved_bbg_commit" != "$BBG_COMMIT" ]]; then
-          printf 'Unexpected Baseband Guard commit: %s\n' "$resolved_bbg_commit" >&2
-          exit 1
-        fi
-
-        sed -i 's/"dtbo",/"dtbo", "system",/' "$bbg_dir/baseband_guard.h"
-
-        if ! grep -q '"dtbo", "system",' "$bbg_dir/baseband_guard.h"; then
-          printf 'Could not add system to Baseband Guard allowlist\n' >&2
-          exit 1
-        fi
-
-        ln -s ../Baseband-guard "$KERNEL_DIR/security/baseband-guard"
-
-        if ! grep -q 'CONFIG_BBG.*baseband-guard/' "$KERNEL_DIR/security/Makefile"; then
-          printf '\nobj-$(CONFIG_BBG) += baseband-guard/\n' >> "$KERNEL_DIR/security/Makefile"
-        fi
-
-        if ! grep -q 'security/baseband-guard/Kconfig' "$KERNEL_DIR/security/Kconfig"; then
-          awk '
-            { lines[NR] = $0 }
-            END {
-              last = 0
-              for (i = 1; i <= NR; i++)
-                if (lines[i] ~ /^endmenu[[:space:]]*$/) last = i
-              if (!last) exit 1
-              for (i = 1; i <= NR; i++) {
-                if (i == last) print "source \"security/baseband-guard/Kconfig\""
-                print lines[i]
-              }
-            }
-          ' "$KERNEL_DIR/security/Kconfig" > "$KERNEL_DIR/security/Kconfig.bbg.tmp"
-          mv "$KERNEL_DIR/security/Kconfig.bbg.tmp" "$KERNEL_DIR/security/Kconfig"
-        fi
-
-        sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' \
-          "$KERNEL_DIR/security/Kconfig"
-
-        if ! sed -n '/^config LSM$/,/^help$/p' "$KERNEL_DIR/security/Kconfig" | grep -q 'baseband_guard'; then
-          printf 'Baseband Guard was not added to CONFIG_LSM defaults\n' >&2
-          exit 1
-        fi
-
-        printf 'RESOLVED_BBG_COMMIT=%s\n' "$resolved_bbg_commit" >> "$GITHUB_ENV"
-        printf 'Baseband Guard commit: %s\n' "$resolved_bbg_commit"
-
-    - name: Apply KernelSU Next and SUSFS patches
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        patch_logs="$BUILD_ROOT/patch-logs"
-        patch_diagnostics="$BUILD_ROOT/patch-diagnostics"
-        ksu_dir="$KERNEL_DIR/KernelSU-Next"
-        mkdir -p "$patch_logs" "$patch_diagnostics/ksun-base-rejects"
-
-        susfs_version="$(awk -F'"' '/^#define SUSFS_VERSION/{print $2; exit}' "$SUSFS_DIR/kernel_patches/include/linux/susfs.h")"
-
-        if [[ "$susfs_version" != v2.2.0 ]]; then
-          printf 'Unsupported SUSFS compatibility patch version: %s\n' "$susfs_version" >&2
-          exit 1
-        fi
-
-        ksu_patch="$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
-        if [[ "$KSU_PATCHSET" == stable ]]; then
-          fix_dir="$PATCHES_DIR/next/susfs_fix_patches/stable/$susfs_version"
-        else
-          fix_dir="$PATCHES_DIR/next/susfs_fix_patches/$susfs_version"
-        fi
-        ksu_patch_status=0
-        patch \
-          --directory="$ksu_dir" \
-          --batch \
-          --forward \
-          -p1 \
-          < "$ksu_patch" \
-          > "$patch_logs/10_enable_susfs_for_ksu.log" 2>&1 || ksu_patch_status=$?
-        cat "$patch_logs/10_enable_susfs_for_ksu.log"
-
-        mapfile -d '' ksu_rejects < <(find "$ksu_dir/kernel" -type f -name '*.rej' -print0)
-
-        if (( ksu_patch_status != 0 )) && (( ${#ksu_rejects[@]} == 0 )); then
-          printf 'KernelSU Next SUSFS patch failed without reject files\n' >&2
-          exit "$ksu_patch_status"
-        fi
-
-        for reject_file in "${ksu_rejects[@]}"; do
-          reject_relative="${reject_file#"$ksu_dir"/}"
-          reject_target="$patch_diagnostics/ksun-base-rejects/$reject_relative"
-          fix_patch="$fix_dir/fix_$(basename "$reject_file" .rej).patch"
-
-          mkdir -p "$(dirname "$reject_target")"
-          cp "$reject_file" "$reject_target"
-
-          if [[ "$KSU_PATCHSET" == stable && "$reject_relative" == kernel/Kconfig.rej ]]; then
-            kconfig_block="$patch_diagnostics/ksun-susfs-kconfig"
-            sed -n '/^+menu "KernelSU - SUSFS"$/,/^+endmenu$/p' "$ksu_patch" |
-              sed -n -e 's/^+//p' -e 's/^ //p' > "$kconfig_block"
-
-            if ! grep -q '^config KSU_SUSFS$' "$kconfig_block"; then
-              printf 'Could not extract SUSFS Kconfig block\n' >&2
-              exit 1
-            fi
-
-            awk -v block="$kconfig_block" '
-              { lines[NR] = $0 }
-              END {
-                last = 0
-                for (i = 1; i <= NR; i++)
-                  if (lines[i] == "endmenu") last = i
-                if (!last) exit 1
-                for (i = 1; i <= NR; i++) {
-                  if (i == last) {
-                    while ((getline line < block) > 0) print line
-                    close(block)
-                  }
-                  print lines[i]
-                }
-              }
-            ' "$ksu_dir/kernel/Kconfig" > "$ksu_dir/kernel/Kconfig.susfs.tmp"
-            mv "$ksu_dir/kernel/Kconfig.susfs.tmp" "$ksu_dir/kernel/Kconfig"
-            continue
-          fi
-
-          if [[ ! -f "$fix_patch" ]]; then
-            printf 'Missing KernelSU Next compatibility patch: %s\n' "$fix_patch" >&2
-            exit 1
-          fi
-
-          {
-            printf '\nApplying %s for %s\n' "$(basename "$fix_patch")" "$reject_relative"
-            patch --directory="$ksu_dir" --batch --forward -p1 < "$fix_patch"
-          } 2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
-        done
-
-        patch \
-          --directory="$ksu_dir" \
-          --batch \
-          --forward \
-          -p1 \
-          < "$fix_dir/overwrite_hook_mode.patch" \
-          2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
-        patch \
-          --directory="$ksu_dir" \
-          --batch \
-          --forward \
-          -p1 \
-          < "$fix_dir/ksu_toolkit.patch" \
-          2>&1 | tee -a "$patch_logs/ksun-compatibility.log"
-
-        if [[ "$KSU_PATCHSET" == stable ]]; then
-          sed -i '/^-[[:space:]]/d' "$ksu_dir/kernel/Kconfig"
-        fi
-
-        if grep -nE '^[+-][[:space:]]' "$ksu_dir/kernel/Kconfig"; then
-          printf 'KernelSU Next Kconfig contains unresolved diff markers\n' >&2
-          exit 1
-        fi
-
-        find "$ksu_dir" -type f -name '*.rej' -delete
-
-        if ! grep -q '^config KSU_SUSFS$' "$ksu_dir/kernel/Kconfig"; then
-          printf 'KernelSU Next SUSFS integration was not applied\n' >&2
-          exit 1
-        fi
-
-        sublevel="$(awk '/^SUBLEVEL =/{print $3; exit}' "$KERNEL_DIR/Makefile")"
-        {
-          printf 'KERNEL_SUBLEVEL=%s\n' "$sublevel"
-          printf 'SUSFS_VERSION=%s\n' "$susfs_version"
-        } >> "$GITHUB_ENV"
-
-        if (( sublevel <= 141 )) && ! grep -q '^#include <linux/dma-buf.h>$' "$KERNEL_DIR/fs/proc/base.c"; then
-          sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' "$KERNEL_DIR/fs/proc/base.c"
-        fi
-
-        if (( sublevel >= 157 )); then
-          sed -i '/^#include <trace\/hooks\/blk.h>$/d' "$KERNEL_DIR/fs/namespace.c"
-        fi
-
-        cp -a "$SUSFS_DIR/kernel_patches/fs/." "$KERNEL_DIR/fs/"
-        cp -a "$SUSFS_DIR/kernel_patches/include/linux/." "$KERNEL_DIR/include/linux/"
-        kernel_patch_status=0
-        patch \
-          --directory="$KERNEL_DIR" \
-          --batch \
-          --forward \
-          -p1 \
-          < "$SUSFS_DIR/$SUSFS_PATCH" \
-          > "$patch_logs/50_add_susfs_in_gki.log" 2>&1 || kernel_patch_status=$?
-        cat "$patch_logs/50_add_susfs_in_gki.log"
-
-        if (( kernel_patch_status != 0 )) || find "$KERNEL_DIR" -type f -name '*.rej' -print -quit | grep -q .; then
-          find "$KERNEL_DIR" -type f -name '*.rej' -print >&2
-          if (( kernel_patch_status == 0 )); then
-            kernel_patch_status=1
-          fi
-          exit "$kernel_patch_status"
-        fi
-
-        if [[ "$CUSTOM_PATCHES" == true ]]; then
-          bbrv3_dir="$PATCHES_DIR/common/bbrv3"
-          bbrv3_sysctl_add="$bbrv3_dir/sysctl_add_proc_dou8vec_minmax.patch"
-          bbrv3_sysctl_fix="$bbrv3_dir/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
-          bbrv3_main="$bbrv3_dir/0001-net-tcp-backport-BBRv3-to-android14-6.1.patch"
-
-          for bbrv3_patch in "$bbrv3_sysctl_add" "$bbrv3_sysctl_fix" "$bbrv3_main"; do
-            if [[ ! -f "$bbrv3_patch" ]]; then
-              printf 'Missing BBRv3 patch: %s\n' "$bbrv3_patch" >&2
-              exit 1
-            fi
-          done
-
-          if ! grep -q '^int proc_dou8vec_minmax(' "$KERNEL_DIR/kernel/sysctl.c"; then
-            patch \
-              --directory="$KERNEL_DIR" \
-              --batch \
-              --forward \
-              -p1 \
-              < "$bbrv3_sysctl_add" \
-              2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_add").log"
-          fi
-
-          if ! grep -qF 'val = READ_ONCE(*data);' "$KERNEL_DIR/kernel/sysctl.c"; then
-            patch \
-              --directory="$KERNEL_DIR" \
-              --batch \
-              --forward \
-              -p1 \
-              < "$bbrv3_sysctl_fix" \
-              2>&1 | tee "$patch_logs/$(basename "$bbrv3_sysctl_fix").log"
-          fi
-
-          patch \
-            --directory="$KERNEL_DIR" \
-            --batch \
-            --forward \
-            -p1 \
-            < "$bbrv3_main" \
-            2>&1 | tee "$patch_logs/$(basename "$bbrv3_main").log"
-        fi
-
-    - name: Configure kernel
+    - name: Configure stock kernel
       shell: bash
       run: |
         set -Eeuo pipefail
@@ -669,21 +225,6 @@ runs:
         ccache --max-size=3G
         ccache --zero-stats
 
-        ksu_kconfig="$KERNEL_DIR/drivers/kernelsu/Kconfig"
-        if [[ ! -f "$ksu_kconfig" ]]; then
-          printf 'KernelSU Next Kconfig is missing: %s\n' "$ksu_kconfig" >&2
-          exit 1
-        fi
-
-        if [[ "$KSU_PATCHSET" == stable ]]; then
-          sed -i '/^-[[:space:]]/d' "$ksu_kconfig"
-        fi
-
-        if grep -nE '^[+-][[:space:]]' "$ksu_kconfig"; then
-          printf 'KernelSU Next Kconfig contains unresolved diff lines before defconfig\n' >&2
-          exit 1
-        fi
-
         make \
           -C "$KERNEL_DIR" \
           O="$OUT_DIR" \
@@ -694,84 +235,7 @@ runs:
           HOSTCC="ccache clang" \
           "$KERNEL_DEFCONFIG"
 
-        fragments=("$CONFIG_FRAGMENT")
-        if [[ "$CUSTOM_PATCHES" == true ]]; then
-          fragments+=("$CUSTOM_PATCHES_FRAGMENT")
-        fi
-
-        for fragment in "${fragments[@]}"; do
-          while IFS='=' read -r option value; do
-            [[ -z "$option" ]] && continue
-            symbol="${option#CONFIG_}"
-            case "$value" in
-              y)
-                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -e "$symbol"
-                ;;
-              n)
-                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" -d "$symbol"
-                ;;
-              *)
-                "$KERNEL_DIR/scripts/config" --file "$OUT_DIR/.config" --set-val "$symbol" "$value"
-                ;;
-            esac
-          done < "$fragment"
-        done
-
-        # Store the requested suffix in the kernel config so setlocalversion
-        # keeps it while the SCM/git suffix is disabled below.
-        "$KERNEL_DIR/scripts/config" \
-          --file "$OUT_DIR/.config" \
-          --set-str LOCALVERSION "$LOCALVERSION"
-        "$KERNEL_DIR/scripts/config" \
-          --file "$OUT_DIR/.config" \
-          --disable LOCALVERSION_AUTO
-
-        # NothingOSS can append -g<commit>-dirty even when
-        # CONFIG_LOCALVERSION_AUTO is disabled. Keep the normal script logic
-        # (including CONFIG_LOCALVERSION), but make scm_version() return empty.
-        setlocalversion="$KERNEL_DIR/scripts/setlocalversion"
-        if [[ ! -f "$setlocalversion" ]]; then
-          printf 'Missing setlocalversion script: %s\n' "$setlocalversion" >&2
-          exit 1
-        fi
-        cp -f "$setlocalversion" "$setlocalversion.original"
-        python3 -c 'from pathlib import Path; import re, sys; p = Path(sys.argv[1]); t = p.read_text(); u, n = re.subn(r"(?m)^(scm_version\(\)\s*\{\s*\n)", r"\1\t# Disabled by NothingUsers kernel builder: do not append git/dirty suffix.\n\treturn 0\n", t, count=1); assert n == 1, "Could not patch scm_version() in scripts/setlocalversion"; p.write_text(u)' "$setlocalversion"
-        chmod +x "$setlocalversion"
-
-        # The suffix is now stored in CONFIG_LOCALVERSION. Clear the
-        # environment variable so olddefconfig cannot append it a second time.
-        unset LOCALVERSION
-
-        make \
-          -C "$KERNEL_DIR" \
-          O="$OUT_DIR" \
-          ARCH="$ARCH" \
-          LLVM="$LLVM" \
-          LLVM_IAS="$LLVM_IAS" \
-          CC="ccache clang" \
-          HOSTCC="ccache clang" \
-          olddefconfig
-
-        for fragment in "${fragments[@]}"; do
-          while IFS= read -r expected; do
-            [[ -z "$expected" ]] && continue
-            option="${expected%%=*}"
-            value="${expected#*=}"
-
-            if [[ "$value" == n ]]; then
-              actual="# $option is not set"
-            else
-              actual="$expected"
-            fi
-
-            if ! grep -qxF "$actual" "$OUT_DIR/.config"; then
-              printf 'Required config was not enabled: %s\n' "$expected" >&2
-              exit 1
-            fi
-          done < "$fragment"
-        done
-
-    - name: Build kernel Image
+    - name: Build stock kernel Image
       id: build
       shell: bash
       run: |
@@ -779,28 +243,11 @@ runs:
         export ARCH=arm64
         export LLVM=1
         export LLVM_IAS=1
-        export KBUILD_BUILD_USER
-        export KBUILD_BUILD_HOST
-        export KBUILD_BUILD_TIMESTAMP
-        export SOURCE_DATE_EPOCH
         export CCACHE_BASEDIR="$BUILD_ROOT"
         export CCACHE_COMPILERCHECK="string:$TOOLCHAIN_VERSION"
         export CCACHE_NOHASHDIR=true
 
-        KBUILD_BUILD_TIMESTAMP="$(git -C "$KERNEL_DIR" show -s --format=%cD HEAD)"
-        SOURCE_DATE_EPOCH="$(git -C "$KERNEL_DIR" show -s --format=%ct HEAD)"
-
-        # CONFIG_LOCALVERSION already contains the requested suffix.
-        # Do not also pass the exported LOCALVERSION variable to make,
-        # otherwise the kernel appends the same suffix twice.
-        requested_localversion="$LOCALVERSION"
-        unset LOCALVERSION
-
-        kernel_cflags="-$OPTIMIZE_LEVEL"
         build_start="$(date +%s)"
-
-        printf 'Compiler optimization: %s\n' "$kernel_cflags"
-
         make \
           -C "$KERNEL_DIR" \
           O="$OUT_DIR" \
@@ -809,49 +256,21 @@ runs:
           LLVM_IAS="$LLVM_IAS" \
           CC="ccache clang" \
           HOSTCC="ccache clang" \
-          KCFLAGS="$kernel_cflags" \
           -j"$(nproc)" \
           Image 2>&1 | tee "$BUILD_ROOT/build.log"
 
-        build_end="$(date +%s)"
-        build_time="$((build_end - build_start))"
-        printf 'BUILD_TIME=%s\n' "$build_time" >> "$GITHUB_ENV"
-
-        if [[ ! -s "$OUT_DIR/$KERNEL_IMAGE" ]]; then
-          printf 'Kernel image was not produced: %s\n' "$OUT_DIR/$KERNEL_IMAGE" >&2
+        build_time="$(($(date +%s) - build_start))"
+        image="$OUT_DIR/$KERNEL_IMAGE"
+        if [[ ! -s "$image" ]]; then
+          printf 'Kernel image was not produced: %s\n' "$image" >&2
           exit 1
         fi
 
         kernel_release="$(make -s -C "$KERNEL_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" LLVM_IAS="$LLVM_IAS" kernelrelease)"
-        base_version="$(make -s -C "$KERNEL_DIR" kernelversion)"
-        expected_release="${base_version}${requested_localversion}"
-
-        if [[ "$kernel_release" != "$expected_release" ]]; then
-          printf 'Unexpected kernel release. Expected %s, got %s\n' \
-            "$expected_release" "$kernel_release" >&2
-          exit 1
-        fi
-
-        version_line="$(strings "$OUT_DIR/$KERNEL_IMAGE" | grep -m1 '^Linux version ' || true)"
-        if [[ -z "$version_line" ]]; then
-          printf 'Linux version string was not found in %s\n' "$OUT_DIR/$KERNEL_IMAGE" >&2
-          exit 1
-        fi
-        embedded_release="${version_line#Linux version }"
-        embedded_release="${embedded_release%% *}"
-        if [[ "$embedded_release" != "$expected_release" ]]; then
-          printf 'Unexpected embedded release. Expected %s, got %s\n' \
-            "$expected_release" "$embedded_release" >&2
-          exit 1
-        fi
-
+        printf 'BUILD_TIME=%s\n' "$build_time" >> "$GITHUB_ENV"
         printf 'KERNEL_RELEASE=%s\n' "$kernel_release" >> "$GITHUB_ENV"
-
-        printf 'Build time: %sm %ss\n' "$((build_time / 60))" "$((build_time % 60))"
         printf 'Kernel release: %s\n' "$kernel_release"
-        printf 'Embedded version: %s\n' "$version_line"
-        printf 'Build identity: %s@%s\n' "$KBUILD_BUILD_USER" "$KBUILD_BUILD_HOST"
-        file "$OUT_DIR/$KERNEL_IMAGE"
+        file "$image"
         ccache --show-stats
 
     - name: Sync AnyKernel3
@@ -873,62 +292,38 @@ runs:
           exit 1
         fi
 
-        rm -rf \
-          "$AK3_DIR/.git" \
-          "$AK3_DIR/.github" \
-          "$AK3_DIR/modules" \
-          "$AK3_DIR/patch" \
-          "$AK3_DIR/ramdisk" \
-          "$AK3_DIR/vendor_patch" \
-          "$AK3_DIR/vendor_ramdisk"
-
-        if ! grep -qF '@KERNEL_STRING@' "$AK3_DIR/anykernel.sh" ||
-          ! grep -qF '@DEVICE_CODENAME@' "$AK3_DIR/anykernel.sh"; then
-          printf 'AnyKernel3 template placeholders are missing\n' >&2
-          exit 1
-        fi
-
+        rm -rf "$AK3_DIR/.git" "$AK3_DIR/.github" "$AK3_DIR/modules" "$AK3_DIR/patch" "$AK3_DIR/ramdisk" "$AK3_DIR/vendor_patch" "$AK3_DIR/vendor_ramdisk"
         printf 'RESOLVED_AK3_COMMIT=%s\n' "$resolved_ak3_commit" >> "$GITHUB_ENV"
 
-    - name: Package primary AnyKernel3
+    - name: Package AnyKernel3
       shell: bash
       run: |
         set -Eeuo pipefail
-        primary_ak3_dir="$BUILD_ROOT/AnyKernel3-$DEVICE"
-        cp -a "$AK3_DIR" "$primary_ak3_dir"
-        cp "$OUT_DIR/$KERNEL_IMAGE" "$primary_ak3_dir/Image"
+        package_dir="$BUILD_ROOT/AnyKernel3-$DEVICE"
+        zip_name="Nothing-$DEVICE-Stock-$KERNEL_RELEASE.zip"
+        cp -a "$AK3_DIR" "$package_dir"
+        cp "$OUT_DIR/$KERNEL_IMAGE" "$package_dir/Image"
 
-        kernel_string="Nothing $DEVICE_NAME KernelSU Next + SUSFS"
+        kernel_string="Nothing $DEVICE_NAME Stock Kernel"
         sed -i \
           -e "s|@KERNEL_STRING@|$kernel_string|g" \
           -e "s|@DEVICE_CODENAME@|$CODENAME|g" \
-          "$primary_ak3_dir/anykernel.sh"
+          "$package_dir/anykernel.sh"
 
-        if grep -qE '@[A-Z_]+@' "$primary_ak3_dir/anykernel.sh"; then
+        if grep -qE '@[A-Z_]+@' "$package_dir/anykernel.sh"; then
           printf 'Unresolved AnyKernel3 template placeholder\n' >&2
           exit 1
         fi
 
-        sh -n "$primary_ak3_dir/anykernel.sh"
-        grep -qxF "device.name1=$CODENAME" "$primary_ak3_dir/anykernel.sh"
-
-        kernel_version="$KERNEL_RELEASE"
-        ak3_zip="Nothing-$DEVICE-KSUNext-SUSFS-$kernel_version-$OPTIMIZE_LEVEL.zip"
+        sh -n "$package_dir/anykernel.sh"
+        grep -qxF "device.name1=$CODENAME" "$package_dir/anykernel.sh"
 
         (
-          cd "$primary_ak3_dir"
-          zip -r9 "$ARTIFACT_DIR/$ak3_zip" . \
-            -x '.gitignore' \
-            -x 'README.md' \
-            -x '*placeholder'
+          cd "$package_dir"
+          zip -r9 "$ARTIFACT_DIR/$zip_name" . -x '.gitignore' -x 'README.md' -x '*placeholder'
         )
 
-        if [[ ! -s "$ARTIFACT_DIR/$ak3_zip" ]]; then
-          printf 'AnyKernel3 package was not produced\n' >&2
-          exit 1
-        fi
-
-        printf 'AK3_ZIP=%s\n' "$ak3_zip" >> "$GITHUB_ENV"
+        printf 'AK3_ZIP=%s\n' "$zip_name" >> "$GITHUB_ENV"
 
     - name: Collect build artifacts
       id: metadata
@@ -938,40 +333,20 @@ runs:
         cp "$OUT_DIR/$KERNEL_IMAGE" "$ARTIFACT_DIR/Image"
         cp "$OUT_DIR/.config" "$ARTIFACT_DIR/kernel.config"
         cp "$BUILD_ROOT/build.log" "$ARTIFACT_DIR/build.log"
-
-        if [[ -f "$OUT_DIR/System.map" ]]; then
-          cp "$OUT_DIR/System.map" "$ARTIFACT_DIR/System.map"
-        fi
+        [[ ! -f "$OUT_DIR/System.map" ]] || cp "$OUT_DIR/System.map" "$ARTIFACT_DIR/System.map"
 
         image_sha256="$(sha256sum "$ARTIFACT_DIR/Image" | awk '{print $1}')"
         ak3_sha256="$(sha256sum "$ARTIFACT_DIR/$AK3_ZIP" | awk '{print $1}')"
-        kernel_version="$KERNEL_RELEASE"
-        artifact_name="$DEVICE-build-files"
-
-        if [[ "$CUSTOM_PATCHES" == true ]]; then
-          tcp_cc=bbr3
-        else
-          tcp_cc=cubic
-        fi
 
         printf '%s\n' \
-          "Nothing Kernel Builder" \
+          "Nothing Stock Kernel Builder" \
           "" \
           "Device: $DEVICE_NAME ($CODENAME / $MODEL)" \
-          "Kernel: $kernel_version" \
-          "KernelSU Next patchset: $KSU_PATCHSET" \
-          "Optimization: $OPTIMIZE_LEVEL" \
-          "Custom patches: $CUSTOM_PATCHES" \
-          "Baseband Guard: $([[ "$CUSTOM_PATCHES" == true ]] && printf enabled || printf disabled)" \
-          "TCP congestion control: $tcp_cc" \
+          "Kernel: $KERNEL_RELEASE" \
+          "NothingOSS commit: $KERNEL_COMMIT" \
           "Flashable package: $AK3_ZIP" \
           "" \
-          "Install the ZIP with a compatible kernel flasher or custom recovery." \
           "The bootloader must be unlocked. Back up the original boot image first." \
-          "Do not flash the raw Image file with fastboot." \
-          "This package has not yet been boot-tested on a physical device." \
-          "If the device does not boot, restore the original boot image." \
-          "" \
           "Image SHA256: $image_sha256" \
           "AnyKernel3 SHA256: $ak3_sha256" \
           > "$ARTIFACT_DIR/README.txt"
@@ -985,34 +360,16 @@ runs:
           --arg kernel_repository "$KERNEL_REPOSITORY" \
           --arg kernel_ref "$KERNEL_REF" \
           --arg kernel_commit "$KERNEL_COMMIT" \
-          --arg kernel_version "$kernel_version" \
-          --arg kernelsu_repository "$KSU_REPOSITORY" \
-          --arg kernelsu_ref "$KSU_REF" \
-          --arg kernelsu_commit "$RESOLVED_KSU_COMMIT" \
-          --arg kernelsu_patchset "$KSU_PATCHSET" \
-          --arg susfs_repository "$SUSFS_REPOSITORY" \
-          --arg susfs_ref "$SUSFS_REF" \
-          --arg susfs_commit "$RESOLVED_SUSFS_COMMIT" \
-          --arg susfs_version "$SUSFS_VERSION" \
-          --arg compatibility_repository "$PATCHES_REPOSITORY" \
-          --arg compatibility_commit "$PATCHES_COMMIT" \
-          --arg bbg_repository "$BBG_REPOSITORY" \
-          --arg bbg_commit "$RESOLVED_BBG_COMMIT" \
+          --arg kernel_version "$KERNEL_RELEASE" \
           --arg anykernel3_repository "$AK3_REPOSITORY" \
           --arg anykernel3_commit "$RESOLVED_AK3_COMMIT" \
           --arg anykernel3_zip "$AK3_ZIP" \
           --arg toolchain "$CLANG_VERSION" \
-          --arg optimize_level "$OPTIMIZE_LEVEL" \
-          --arg custom_patches "$CUSTOM_PATCHES" \
-          --arg tcp_congestion_control "$tcp_cc" \
-          --arg localversion "$LOCALVERSION" \
-          --arg build_user "$KBUILD_BUILD_USER" \
-          --arg build_host "$KBUILD_BUILD_HOST" \
           --arg image_sha256 "$image_sha256" \
           --arg anykernel3_sha256 "$ak3_sha256" \
-          --argjson developer_mode "$DEVELOPER_MODE" \
           --argjson build_time "$BUILD_TIME" \
           '{
+            stock: true,
             device: $device,
             name: $name,
             codename: $codename,
@@ -1024,27 +381,6 @@ runs:
               commit: $kernel_commit,
               version: $kernel_version
             },
-            kernelsu: {
-              repository: $kernelsu_repository,
-              ref: $kernelsu_ref,
-              commit: $kernelsu_commit,
-              patchset: $kernelsu_patchset
-            },
-            susfs: {
-              repository: $susfs_repository,
-              ref: $susfs_ref,
-              commit: $susfs_commit,
-              version: $susfs_version
-            },
-            compatibility_patches: {
-              repository: $compatibility_repository,
-              commit: $compatibility_commit
-            },
-            baseband_guard: {
-              enabled: ($custom_patches == "true"),
-              repository: $bbg_repository,
-              commit: $bbg_commit
-            },
             anykernel3: {
               repository: $anykernel3_repository,
               commit: $anykernel3_commit,
@@ -1052,23 +388,14 @@ runs:
               sha256: $anykernel3_sha256
             },
             toolchain: $toolchain,
-            optimize_level: $optimize_level,
-            custom_patches: ($custom_patches == "true"),
-            tcp_congestion_control: $tcp_congestion_control,
-            localversion: $localversion,
-            build_identity: {
-              user: $build_user,
-              host: $build_host
-            },
-            developer_mode: $developer_mode,
             image_sha256: $image_sha256,
             build_time_seconds: $build_time
           }' > "$ARTIFACT_DIR/build.json"
 
         {
-          printf 'artifact_name=%s\n' "$artifact_name"
+          printf 'artifact_name=%s\n' "$DEVICE-stock-anykernel3"
           printf 'image_sha256=%s\n' "$image_sha256"
-          printf 'kernel_version=%s\n' "$kernel_version"
+          printf 'kernel_version=%s\n' "$KERNEL_RELEASE"
         } >> "$GITHUB_OUTPUT"
 
         {
@@ -1077,20 +404,16 @@ runs:
           echo ""
           echo "| Field | Value |"
           echo "|---|---|"
-          echo "| Kernel | \`$kernel_version\` |"
+          echo "| Kernel | \`$KERNEL_RELEASE\` |"
           echo "| Image SHA256 | \`$image_sha256\` |"
           echo "| AnyKernel3 | \`$AK3_ZIP\` |"
           echo "| AnyKernel3 SHA256 | \`$ak3_sha256\` |"
-          echo "| Build time | \`${BUILD_TIME}s\` |"
-          echo "| Optimization | \`$OPTIMIZE_LEVEL\` |"
-          echo "| Local version | \`${LOCALVERSION:-<none>}\` |"
-          echo "| Build identity | \`$KBUILD_BUILD_USER@$KBUILD_BUILD_HOST\` |"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload AnyKernel3
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.DEVICE }}-anykernel3
+        name: ${{ env.DEVICE }}-stock-anykernel3
         path: artifacts/${{ env.DEVICE }}/*.zip
         if-no-files-found: error
         compression-level: 0
@@ -1098,7 +421,7 @@ runs:
     - name: Upload build files
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.DEVICE }}-build-files
+        name: ${{ env.DEVICE }}-stock-build-files
         path: |
           artifacts/${{ env.DEVICE }}
           !artifacts/${{ env.DEVICE }}/*.zip
@@ -1106,83 +429,29 @@ runs:
         compression-level: 6
 
     - name: Collect developer diagnostics
-      id: developer_diagnostics
-      if: ${{ always() && inputs.developer_mode == 'true' }}
+      if: ${{ failure() && inputs.developer_mode == 'true' }}
       shell: bash
-      env:
-        MANIFEST_INPUT: ${{ inputs.manifest }}
       run: |
         set -u
-        diagnostic_device="${CODENAME:-${DEVICE:-$(basename "$MANIFEST_INPUT" .json)}}"
-        diagnostic_build_root="${BUILD_ROOT:-$RUNNER_TEMP/nothing-kernel-diagnostics}"
-        diagnostic_dir="$GITHUB_WORKSPACE/developer-diagnostics/$diagnostic_device"
-        mkdir -p "$diagnostic_dir/rejects" "$diagnostic_dir/logs" "$diagnostic_dir/diffs"
-
-        printf 'artifact_name=%s-developer-diagnostics\n' "$diagnostic_device" >> "$GITHUB_OUTPUT"
-
-        printf '%s\n' \
-          "Device: ${DEVICE_NAME:-unknown}" \
-          "Kernel ref: ${KERNEL_REF:-unknown}" \
-          "Kernel commit: ${KERNEL_COMMIT:-unknown}" \
-          "KernelSU Next ref: ${KSU_REF:-unknown}" \
-          "KernelSU Next commit: ${RESOLVED_KSU_COMMIT:-unknown}" \
-          "SUSFS ref: ${SUSFS_REF:-unknown}" \
-          "SUSFS commit: ${RESOLVED_SUSFS_COMMIT:-unknown}" \
-          "SUSFS version: ${SUSFS_VERSION:-unknown}" \
-          "" \
-          "ksun-base-rejects contains expected rejects from the upstream integration patch." \
-          "They are resolved by the pinned compatibility patch series." \
-          "Any other .rej file indicates an unresolved patch conflict." \
-          > "$diagnostic_dir/README.txt"
-
-        if [[ -d "$diagnostic_build_root/patch-diagnostics" ]]; then
-          cp -a "$diagnostic_build_root/patch-diagnostics/." "$diagnostic_dir/rejects/"
-        fi
-
-        if [[ -d "$diagnostic_build_root/patch-logs" ]]; then
-          cp -a "$diagnostic_build_root/patch-logs/." "$diagnostic_dir/logs/"
-        fi
-
-        if [[ -f "$diagnostic_build_root/build.log" ]]; then
-          cp "$diagnostic_build_root/build.log" "$diagnostic_dir/logs/build.log"
-        fi
-
-        if [[ -d "${KERNEL_DIR:-}" ]]; then
-          while IFS= read -r -d '' reject_file; do
-            reject_relative="${reject_file#"$KERNEL_DIR"/}"
-            reject_target="$diagnostic_dir/rejects/kernel/$reject_relative"
-            mkdir -p "$(dirname "$reject_target")"
-            cp "$reject_file" "$reject_target"
-          done < <(find "$KERNEL_DIR" -type f \( -name '*.rej' -o -name '*.orig' \) -print0)
-
-          git -C "$KERNEL_DIR" status --short > "$diagnostic_dir/diffs/kernel-status.txt" 2>&1 || true
-          git -C "$KERNEL_DIR" diff --binary > "$diagnostic_dir/diffs/kernel.patch" 2>&1 || true
-        fi
-
-        if [[ -n "${KERNEL_DIR:-}" && -d "$KERNEL_DIR/KernelSU-Next" ]]; then
-          git -C "$KERNEL_DIR/KernelSU-Next" status --short > "$diagnostic_dir/diffs/ksun-status.txt" 2>&1 || true
-          git -C "$KERNEL_DIR/KernelSU-Next" diff --binary > "$diagnostic_dir/diffs/ksun.patch" 2>&1 || true
-        fi
+        diagnostic_dir="$GITHUB_WORKSPACE/developer-diagnostics/${CODENAME:-unknown}"
+        mkdir -p "$diagnostic_dir"
+        [[ ! -f "${BUILD_ROOT:-}/build.log" ]] || cp "$BUILD_ROOT/build.log" "$diagnostic_dir/build.log"
+        [[ ! -f "${OUT_DIR:-}/.config" ]] || cp "$OUT_DIR/.config" "$diagnostic_dir/kernel.config"
+        [[ ! -d "${KERNEL_DIR:-}/.git" ]] || git -C "$KERNEL_DIR" status --short > "$diagnostic_dir/git-status.txt"
 
     - name: Upload developer diagnostics
-      if: ${{ always() && inputs.developer_mode == 'true' }}
+      if: ${{ failure() && inputs.developer_mode == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.developer_diagnostics.outputs.artifact_name }}
-        path: developer-diagnostics
-        if-no-files-found: error
-        compression-level: 9
+        name: ${{ env.CODENAME }}-stock-developer-diagnostics
+        path: developer-diagnostics/${{ env.CODENAME }}
+        if-no-files-found: warn
+        compression-level: 6
 
     - name: Save rolling ccache
-      if: ${{ always() && env.CODENAME != '' }}
+      if: ${{ always() && env.CODENAME != '' && env.TOOLCHAIN_VERSION != '' }}
       continue-on-error: true
       uses: actions/cache/save@v4
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-nothing-kernel-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-    - name: Show patch rejects
-      if: failure()
-      shell: bash
-      run: |
-        find "$BUILD_ROOT" -type f -name "*.rej" -print -exec sed -n '1,240p' {} \; 2>/dev/null || true
+        path: ${{ runner.temp }}/ccache-stock
+        key: ccache-stock-${{ env.CODENAME }}-${{ env.TOOLCHAIN_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
