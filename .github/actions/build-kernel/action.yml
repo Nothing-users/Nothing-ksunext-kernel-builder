@@ -92,6 +92,8 @@ runs:
           (.susfs.repository | test("^https://")) and
           (.compatibility_patches.repository | test("^https://")) and
           (.compatibility_patches.commit | test("^[0-9a-f]{40}$")) and
+          (.baseband_guard.repository | test("^https://")) and
+          (.baseband_guard.commit | test("^[0-9a-f]{40}$")) and
           (.anykernel3.repository | test("^https://")) and
           (.anykernel3.commit | test("^[0-9a-f]{40}$"))
         ' "$manifest" >/dev/null
@@ -196,6 +198,8 @@ runs:
           printf 'SUSFS_PATCH=%s\n' "$(read_json '.susfs.patch')"
           printf 'PATCHES_REPOSITORY=%s\n' "$(read_json '.compatibility_patches.repository')"
           printf 'PATCHES_COMMIT=%s\n' "$(read_json '.compatibility_patches.commit')"
+          printf 'BBG_REPOSITORY=%s\n' "$(read_json '.baseband_guard.repository')"
+          printf 'BBG_COMMIT=%s\n' "$(read_json '.baseband_guard.commit')"
           printf 'AK3_REPOSITORY=%s\n' "$(read_json '.anykernel3.repository')"
           printf 'AK3_COMMIT=%s\n' "$(read_json '.anykernel3.commit')"
           printf 'OPTIMIZE_LEVEL=%s\n' "$OPTIMIZE_LEVEL_INPUT"
@@ -388,6 +392,65 @@ runs:
           printf 'Unexpected compatibility patches commit: %s\n' "$resolved_patches_commit" >&2
           exit 1
         fi
+
+    - name: Integrate Baseband Guard
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+
+        if [[ "$CUSTOM_PATCHES" != true ]]; then
+          printf 'RESOLVED_BBG_COMMIT=disabled\n' >> "$GITHUB_ENV"
+          exit 0
+        fi
+
+        bbg_dir="$KERNEL_DIR/Baseband-guard"
+        git init "$bbg_dir"
+        git -C "$bbg_dir" remote add origin "$BBG_REPOSITORY"
+        git -C "$bbg_dir" -c protocol.version=2 fetch \
+          --filter=blob:none \
+          origin \
+          "$BBG_COMMIT"
+        git -C "$bbg_dir" checkout --detach FETCH_HEAD
+        resolved_bbg_commit="$(git -C "$bbg_dir" rev-parse HEAD)"
+
+        if [[ "$resolved_bbg_commit" != "$BBG_COMMIT" ]]; then
+          printf 'Unexpected Baseband Guard commit: %s\n' "$resolved_bbg_commit" >&2
+          exit 1
+        fi
+
+        ln -s ../Baseband-guard "$KERNEL_DIR/security/baseband-guard"
+
+        if ! grep -q 'CONFIG_BBG.*baseband-guard/' "$KERNEL_DIR/security/Makefile"; then
+          printf '\nobj-$(CONFIG_BBG) += baseband-guard/\n' >> "$KERNEL_DIR/security/Makefile"
+        fi
+
+        if ! grep -q 'security/baseband-guard/Kconfig' "$KERNEL_DIR/security/Kconfig"; then
+          awk '
+            { lines[NR] = $0 }
+            END {
+              last = 0
+              for (i = 1; i <= NR; i++)
+                if (lines[i] ~ /^endmenu[[:space:]]*$/) last = i
+              if (!last) exit 1
+              for (i = 1; i <= NR; i++) {
+                if (i == last) print "source \"security/baseband-guard/Kconfig\""
+                print lines[i]
+              }
+            }
+          ' "$KERNEL_DIR/security/Kconfig" > "$KERNEL_DIR/security/Kconfig.bbg.tmp"
+          mv "$KERNEL_DIR/security/Kconfig.bbg.tmp" "$KERNEL_DIR/security/Kconfig"
+        fi
+
+        sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' \
+          "$KERNEL_DIR/security/Kconfig"
+
+        if ! sed -n '/^config LSM$/,/^help$/p' "$KERNEL_DIR/security/Kconfig" | grep -q 'baseband_guard'; then
+          printf 'Baseband Guard was not added to CONFIG_LSM defaults\n' >&2
+          exit 1
+        fi
+
+        printf 'RESOLVED_BBG_COMMIT=%s\n' "$resolved_bbg_commit" >> "$GITHUB_ENV"
+        printf 'Baseband Guard commit: %s\n' "$resolved_bbg_commit"
 
     - name: Apply KernelSU Next and SUSFS patches
       shell: bash
@@ -892,6 +955,7 @@ runs:
           "KernelSU Next patchset: $KSU_PATCHSET" \
           "Optimization: $OPTIMIZE_LEVEL" \
           "Custom patches: $CUSTOM_PATCHES" \
+          "Baseband Guard: $([[ "$CUSTOM_PATCHES" == true ]] && printf enabled || printf disabled)" \
           "TCP congestion control: $tcp_cc" \
           "Flashable package: $AK3_ZIP" \
           "" \
@@ -925,6 +989,8 @@ runs:
           --arg susfs_version "$SUSFS_VERSION" \
           --arg compatibility_repository "$PATCHES_REPOSITORY" \
           --arg compatibility_commit "$PATCHES_COMMIT" \
+          --arg bbg_repository "$BBG_REPOSITORY" \
+          --arg bbg_commit "$RESOLVED_BBG_COMMIT" \
           --arg anykernel3_repository "$AK3_REPOSITORY" \
           --arg anykernel3_commit "$RESOLVED_AK3_COMMIT" \
           --arg anykernel3_zip "$AK3_ZIP" \
@@ -966,6 +1032,11 @@ runs:
             compatibility_patches: {
               repository: $compatibility_repository,
               commit: $compatibility_commit
+            },
+            baseband_guard: {
+              enabled: ($custom_patches == "true"),
+              repository: $bbg_repository,
+              commit: $bbg_commit
             },
             anykernel3: {
               repository: $anykernel3_repository,

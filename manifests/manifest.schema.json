@@ -12,6 +12,7 @@
     "kernelsu",
     "susfs",
     "compatibility_patches",
+    "baseband_guard",
     "anykernel3"
   ],
   "properties": {
@@ -85,6 +86,13 @@
       ]
     },
     "compatibility_patches": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit"
+      ]
+    },
+    "baseband_guard": {
       "type": "object",
       "required": [
         "repository",

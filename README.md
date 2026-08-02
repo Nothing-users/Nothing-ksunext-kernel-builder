@@ -21,7 +21,7 @@ An automated GitHub Actions builder for Nothing kernels with KernelSU Next, SUSF
 - SUSFS v2.2.0
 - Android Clang `clang-r487747c`
 - Flashable AnyKernel3 packages
-- BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
+- Baseband Guard, BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
 
 ## Patches
 
@@ -29,6 +29,7 @@ An automated GitHub Actions builder for Nothing kernels with KernelSU Next, SUSF
 - Separate KernelSU Next compatibility fixes for `dev` and `stable`
 - Hook mode and KSU toolkit compatibility patches
 - BBRv3 backport for Nothing kernel
+- Baseband Guard from [vc-teahouse](https://github.com/vc-teahouse/Baseband-guard)
 - Small compatibility fixes for Nothing's modified 6.1 kernel
 
 ## Output

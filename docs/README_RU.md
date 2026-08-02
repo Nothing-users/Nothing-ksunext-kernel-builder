@@ -21,7 +21,7 @@
 - SUSFS v2.2.0
 - Android Clang `clang-r487747c`
 - Прошиваемые пакеты AnyKernel3
-- BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
+- Baseband Guard, BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
 
 ## Патчи
 
@@ -29,6 +29,7 @@
 - Отдельные исправления совместимости KernelSU Next для `dev` и `stable`
 - Патчи совместимости с режимом хуков и инструментарием KSU
 - Бэкпорт BBRv3 для ядра Nothing
+- Baseband Guard от [vc-teahouse](https://github.com/vc-teahouse/Baseband-guard)
 - Небольшие исправления совместимости для ядра Nothing версии 6.1
 
 ## Результаты сборки

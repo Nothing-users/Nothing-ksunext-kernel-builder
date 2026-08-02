@@ -33,6 +33,10 @@
     "repository": "https://github.com/WildKernels/kernel_patches.git",
     "commit": "24865a0bc50dfb65b04153cc9ad2879a9c26cc7e"
   },
+  "baseband_guard": {
+    "repository": "https://github.com/vc-teahouse/Baseband-guard.git",
+    "commit": "a54e0dc6cf0aff4dd87fec49644a02d2eb612905"
+  },
   "anykernel3": {
     "repository": "https://github.com/weekanya/AnyKernel3.git",
     "commit": "a7571962cce8c839ff4dd8f26ffa9740854ebbf0"
