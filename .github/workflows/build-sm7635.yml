@@ -25,20 +25,6 @@ on:
         options:
           - dev
           - stable
-          - custom
-      ksun_custom_ref:
-        description: Custom KernelSU Next branch, tag or commit
-        required: false
-        default: ""
-        type: string
-      ksun_patchset:
-        description: Compatibility patches for custom KernelSU Next ref
-        required: true
-        default: dev
-        type: choice
-        options:
-          - dev
-          - stable
       susfs_ref:
         description: SUSFS branch or commit, empty selects android14-6.1 automatically
         required: false
@@ -104,17 +90,6 @@ jobs:
           esac
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-      - name: Validate custom KernelSU Next ref
-        if: ${{ inputs.ksun_ref == 'custom' }}
-        shell: bash
-        env:
-          KSUN_CUSTOM_REF: ${{ inputs.ksun_custom_ref }}
-        run: |
-          if [[ -z "$KSUN_CUSTOM_REF" ]]; then
-            echo "Custom KernelSU Next ref must not be empty" >&2
-            exit 2
-          fi
-
   build:
     needs: prepare
     runs-on: ubuntu-24.04
@@ -130,8 +105,8 @@ jobs:
         with:
           manifest: ${{ matrix.manifest }}
           kernel_ref: ${{ inputs.kernel_ref }}
-          ksun_ref: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_custom_ref || inputs.ksun_ref }}
-          ksun_patchset: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
+          ksun_ref: ${{ inputs.ksun_ref }}
+          ksun_patchset: ${{ inputs.ksun_ref }}
           susfs_ref: ${{ inputs.susfs_ref }}
           optimize_level: ${{ inputs.optimize_level }}
           custom_patches: ${{ inputs.custom_patches }}
@@ -181,8 +156,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEVICE: ${{ inputs.device }}
           KERNEL_REF: ${{ inputs.kernel_ref }}
-          KSUN_REF: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_custom_ref || inputs.ksun_ref }}
-          KSUN_PATCHSET: ${{ inputs.ksun_ref == 'custom' && inputs.ksun_patchset || inputs.ksun_ref }}
+          KSUN_REF: ${{ inputs.ksun_ref }}
+          KSUN_PATCHSET: ${{ inputs.ksun_ref }}
           SUSFS_REF: ${{ inputs.susfs_ref }}
           OPTIMIZE_LEVEL: ${{ inputs.optimize_level }}
           CUSTOM_PATCHES: ${{ inputs.custom_patches }}

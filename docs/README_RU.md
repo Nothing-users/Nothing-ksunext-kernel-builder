@@ -17,10 +17,10 @@
 ## Что входит в сборку
 
 - Исходный код ядра NothingOSS 6.1
-- KernelSU Next (`dev`, `stable`)
+- KernelSU Next (`dev` или `stable`)
 - SUSFS v2.2.0
 - Android Clang `clang-r487747c`
-- AnyKernel3 ядро 
+- AnyKernel3 ядро
 - BBRv3, FQ, CAKE, TTL Target, MGLRU, ZSTD
 
 ## Патчи
