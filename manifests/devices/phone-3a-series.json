@@ -10,7 +10,7 @@
   "codename": "asteroids",
   "android": "android14-6.1",
   "kernel": {
-    "repository": "https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635.git",
+    "repository": "https://github.com/nothing-users/android_kernel_msm-6.1_nothing_sm7635.git",
     "branch": "sm7635/b/mr",
     "defconfig": "gki_defconfig",
     "image": "arch/arm64/boot/Image"
